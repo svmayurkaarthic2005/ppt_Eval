@@ -326,7 +326,10 @@ async def run_stage2_deep_analysis(conn: asyncpg.Connection, submission_id: UUID
     academic_benchmark = submission["academic_benchmark"]
     if not academic_benchmark:
         try:
-            from app.research.scholarly import fetch_academic_literature, generate_academic_benchmark
+            from app.research.scholarly import (
+                fetch_academic_literature,
+                generate_academic_benchmark,
+            )
             deck_text = "\n".join(f"[Slide {s['slide_number']}] {s['raw_text'] or ''}" for s in slides)
             papers = await fetch_academic_literature(
                 domain=context.problem_domain,
@@ -352,7 +355,7 @@ async def run_stage2_deep_analysis(conn: asyncpg.Connection, submission_id: UUID
                 submission_id,
                 academic_benchmark,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Academic benchmark generation failed for submission %s: %s", submission_id, exc)
             academic_benchmark = None
 

@@ -119,7 +119,7 @@ def _prepare_image_for_llm(image_bytes: bytes) -> tuple[str, bytes]:
         out = io.BytesIO()
         img.convert("RGB").save(out, format="JPEG", quality=85, optimize=True)
         return "image/jpeg", out.getvalue()
-    except Exception:
+    except (OSError, ValueError):
         # Fall back to raw bytes as png (e.g. for mock test bytes)
         return "image/png", image_bytes
 
@@ -185,7 +185,6 @@ def _build_messages(
 
 
 def _estimate_tokens(text_context: str, image_count: int) -> int:
-    global _vision_disabled_until
     if time.time() < _vision_disabled_until or image_count == 0:
         return (len(text_context) // CHARS_PER_TOKEN_ESTIMATE) + RESPONSE_TOKEN_ESTIMATE
     return (
@@ -304,7 +303,7 @@ async def _call_groq(
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await post_with_backoff(client, payload, settings.groq_api_key)
         return response.json()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         if "429" in str(exc) or "rate_limit" in str(exc).lower():
             _vision_disabled_until = time.time() + 1800.0
         logger.warning(
@@ -470,7 +469,6 @@ async def evaluate_criterion(
     text_context = "\n".join(
         f"[Slide {s.slide_number}] {s.raw_text}" for s in evidence_slides if s.raw_text
     )
-    global _vision_disabled_until
     images = [(s.slide_number, s.image_bytes) for s in evidence_slides if s.image_bytes is not None]
     if time.time() >= _vision_disabled_until and images:
         image_batches = _batch_images(images)

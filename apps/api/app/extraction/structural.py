@@ -192,6 +192,10 @@ def parse_pptx(content: bytes) -> list[ParsedSlide]:
 
         for shape in _iter_shapes(slide.shapes):
             if shape.shape_id == title_shape_id:
+                shape_dict, _ = _extract_shape(shape)
+                shape_dicts.append(shape_dict)
+                if shape_dict["is_picture"] and not shape_dict["has_chart"]:
+                    needs_visual_rendering = True
                 continue  # kept separate in `title`, not duplicated into raw_text
 
             if getattr(shape, "has_table", False):

@@ -6,8 +6,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.storage_cleanup import cleanup_submission_storage
-
 from app.auth import get_current_user_id
 from app.comparison import (
     ComparisonResponse,
@@ -35,6 +33,7 @@ from app.extraction import (
 from app.models.schemas import Submission, SubmissionContext
 from app.pipeline import extract_problem_statement
 from app.pipeline.orchestrator import RankedSubmission, get_ranked_submissions, run_stage2_selection
+from app.storage_cleanup import cleanup_submission_storage
 from app.supabase_client import get_service_client
 
 router = APIRouter(prefix="/submissions", tags=["submissions"])

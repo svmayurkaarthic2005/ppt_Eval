@@ -109,7 +109,7 @@ class Submission(BaseModel):
             try:
                 import json
                 return json.loads(v)
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 return v
         return v
 

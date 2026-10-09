@@ -16,7 +16,15 @@ from app.models.schemas import HealthStatus
 from app.pipeline import extract_problem_statement, run_pipeline
 from app.pipeline.orchestrator import run_stage1_preliminary, run_stage2_deep_analysis
 from app.rendering.slide_renderer import render_submission_slides
-from app.routers import calibration, evaluation, problem_statements, rankings, rubric, submissions, teams
+from app.routers import (
+    calibration,
+    evaluation,
+    problem_statements,
+    rankings,
+    rubric,
+    submissions,
+    teams,
+)
 from app.rubric.builder import build_rubric_for_submission
 
 

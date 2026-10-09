@@ -59,6 +59,7 @@ def test_resolve_soffice_path_returns_none_when_unavailable(monkeypatch):
 
 async def test_convert_pptx_to_pdf_raises_unavailable_when_neither_available(monkeypatch):
     import pytest
+
     from app.rendering.slide_renderer import convert_pptx_to_pdf_bytes
     from app.rendering.subprocess_runner import SubprocessUnavailableError
 

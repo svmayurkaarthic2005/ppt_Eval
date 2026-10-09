@@ -77,7 +77,7 @@ def _is_powerpoint_available() -> bool:
     if not sys.platform.startswith("win"):
         return False
     try:
-        import comtypes  # noqa: F401
+        import comtypes
         import comtypes.client  # noqa: F401
         return True
     except ImportError:
@@ -104,12 +104,12 @@ def _convert_pptx_to_pdf_powerpoint(pptx_bytes: bytes) -> bytes:
             if pres is not None:
                 try:
                     pres.Close()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             if ppt is not None:
                 try:
                     ppt.Quit()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
             comtypes.CoUninitialize()
 

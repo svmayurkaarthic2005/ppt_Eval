@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -19,7 +20,7 @@ _USER_AGENT = "HackEval-Academic-Researcher/1.0 (mailto:research@hackeval.local;
 
 class ScholarlyPaper(BaseModel):
     title: str
-    source: str  # "IEEE", "arXiv", "IEEE / CrossRef"
+    source: str  # "Semantic Scholar", "IEEE", "arXiv", "IEEE / CrossRef"
     venue: str
     authors: str
     year: str
@@ -36,13 +37,74 @@ class AcademicBenchmark(BaseModel):
     limitations_and_tradeoffs: list[str]
 
 
+async def fetch_semantic_scholar_papers(query: str, max_results: int = 4) -> list[ScholarlyPaper]:
+    """Queries Semantic Scholar Graph API using the configured S2 API key from .env."""
+    settings = get_settings()
+    api_key = (settings.semantic_scholar_api_key or "").strip()
+    papers: list[ScholarlyPaper] = []
+    try:
+        headers = {"User-Agent": _USER_AGENT}
+        if api_key:
+            headers["x-api-key"] = api_key
+        url = "https://api.semanticscholar.org/graph/v1/paper/search"
+        params: dict[str, str | int] = {
+            "query": query,
+            "limit": max_results,
+            "fields": "title,year,venue,authors,abstract,citationCount,url,openAccessPdf",
+        }
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            for attempt in range(3):
+                resp = await client.get(url, params=params, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in data.get("data", []):
+                        title = (item.get("title") or "").strip().replace("\n", " ")
+                        if not title:
+                            continue
+                        venue = item.get("venue") or "Semantic Scholar"
+                        year = str(item.get("year") or "2024")
+                        authors_list = item.get("authors") or []
+                        authors = ", ".join(a.get("name", "") for a in authors_list[:3] if a.get("name")) or "Researchers"
+                        url_val = item.get("url") or (item.get("openAccessPdf") or {}).get("url") or f"https://www.semanticscholar.org/search?q={query}"
+                        citations = item.get("citationCount")
+                        summary = (item.get("abstract") or "").strip().replace("\n", " ")
+                        if summary:
+                            summary = summary[:280] + ("..." if len(summary) > 280 else "")
+                        else:
+                            summary = f"Indexed in {venue} ({year}). Peer-reviewed academic benchmark."
+                        if citations is not None and citations > 0:
+                            summary += f" · {citations} citations"
+
+                        papers.append(
+                            ScholarlyPaper(
+                                title=title,
+                                source="Semantic Scholar",
+                                venue=f"{venue} ({year})",
+                                authors=authors,
+                                year=year,
+                                url=url_val,
+                                summary=summary,
+                            )
+                        )
+                    break
+                elif resp.status_code == 429 and attempt < 2:
+                    logger.info("Semantic Scholar rate-limited (429), retrying in %.1fs...", 1.2 * (attempt + 1))
+                    await asyncio.sleep(1.2 * (attempt + 1))
+                else:
+                    logger.warning("Semantic Scholar HTTP %s: %s", resp.status_code, resp.text[:120])
+                    break
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Semantic Scholar query failed: %s", exc)
+    return papers
+
+
 async def fetch_crossref_ieee_papers(query: str, max_results: int = 4) -> list[ScholarlyPaper]:
     """Queries CrossRef for peer-reviewed papers with IEEE and academic venue indexing."""
     papers: list[ScholarlyPaper] = []
     try:
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
             url = "https://api.crossref.org/works"
-            params = {
+            params: dict[str, str | int] = {
                 "query": f"{query} IEEE",
                 "rows": max_results,
                 "select": "title,container-title,author,URL,published,score",
@@ -58,13 +120,13 @@ async def fetch_crossref_ieee_papers(query: str, max_results: int = 4) -> list[S
                     venues = item.get("container-title") or ["IEEE Proceedings / Transactions"]
                     venue = venues[0].strip() if venues else "IEEE"
                     source = "IEEE" if "ieee" in venue.lower() else "IEEE / CrossRef"
-                    
+
                     authors_list = item.get("author", [])
                     authors_str = ", ".join(
                         f"{a.get('given', '')} {a.get('family', '')}".strip()
                         for a in authors_list[:3]
                     ) or "Academic Researchers"
-                    
+
                     year = "2024"
                     date_parts = item.get("published", {}).get("date-parts", [[]])[0]
                     if date_parts:
@@ -82,7 +144,7 @@ async def fetch_crossref_ieee_papers(query: str, max_results: int = 4) -> list[S
                             summary=f"Published in {venue} ({year}). Focuses on technical methodologies in {title.lower()}.",
                         )
                     )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("CrossRef query failed: %s", exc)
     return papers
 
@@ -94,7 +156,7 @@ async def fetch_arxiv_papers(query: str, max_results: int = 4) -> list[Scholarly
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
             url = "http://export.arxiv.org/api/query"
             clean_query = re.sub(r"[^\w\s]", "", query).strip()
-            params = {"search_query": f"all:{clean_query}", "start": 0, "max_results": max_results}
+            params: dict[str, str | int] = {"search_query": f"all:{clean_query}", "start": 0, "max_results": max_results}
             resp = await client.get(url, params=params, headers={"User-Agent": _USER_AGENT})
             if resp.status_code == 200:
                 root = ET.fromstring(resp.text)
@@ -110,11 +172,12 @@ async def fetch_arxiv_papers(query: str, max_results: int = 4) -> list[Scholarly
                     year = (pub_el.text or "")[:4] if pub_el is not None else "2024"
 
                     authors_els = entry.findall("{http://www.w3.org/2005/Atom}author")
-                    authors = ", ".join(
-                        a.find("{http://www.w3.org/2005/Atom}name").text.strip()
-                        for a in authors_els[:3]
-                        if a.find("{http://www.w3.org/2005/Atom}name") is not None
-                    ) or "arXiv Researchers"
+                    authors_list: list[str] = []
+                    for a in authors_els[:3]:
+                        name_el = a.find("{http://www.w3.org/2005/Atom}name")
+                        if name_el is not None and name_el.text:
+                            authors_list.append(name_el.text.strip())
+                    authors = ", ".join(authors_list) or "arXiv Researchers"
 
                     if title:
                         papers.append(
@@ -128,13 +191,13 @@ async def fetch_arxiv_papers(query: str, max_results: int = 4) -> list[Scholarly
                                 summary=summary[:280] + ("..." if len(summary) > 280 else ""),
                             )
                         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("arXiv query failed: %s", exc)
     return papers
 
 
 async def fetch_academic_literature(domain: str, problem_text: str, deck_sample: str) -> list[ScholarlyPaper]:
-    """Fetches relevant peer-reviewed and preprint literature from IEEE (via CrossRef) and arXiv."""
+    """Fetches relevant peer-reviewed and preprint literature from Semantic Scholar, IEEE, and arXiv."""
     query_parts = [p for p in [domain, problem_text[:80]] if p]
     query = " ".join(query_parts)
     stop_words = {"need", "early", "reliable", "rarely", "available", "classical", "their", "about", "using", "with", "from", "that", "this"}
@@ -142,11 +205,11 @@ async def fetch_academic_literature(domain: str, problem_text: str, deck_sample:
     filtered = [w for w in raw_words if w.lower() not in stop_words]
     search_term = " ".join(filtered[:5]) or "crop stress machine learning"
 
-    # Concurrently query CrossRef (IEEE) and arXiv
+    s2_task = fetch_semantic_scholar_papers(search_term, max_results=4)
     ieee_task = fetch_crossref_ieee_papers(search_term, max_results=4)
     arxiv_task = fetch_arxiv_papers(search_term, max_results=4)
 
-    results = await asyncio.gather(ieee_task, arxiv_task, return_exceptions=True)
+    results = await asyncio.gather(s2_task, ieee_task, arxiv_task, return_exceptions=True)
     all_papers: list[ScholarlyPaper] = []
     for r in results:
         if isinstance(r, list):
@@ -162,8 +225,6 @@ async def fetch_academic_literature(domain: str, problem_text: str, deck_sample:
             unique_papers.append(p)
 
     return unique_papers[:8]
-
-
 
 
 _SYNTHESIS_JSON_SCHEMA = {
@@ -216,7 +277,7 @@ async def generate_academic_benchmark(
         for p in papers
     )
 
-    prompt = f"""You are an elite academic peer reviewer and AI judge. Analyze the hackathon submission below against published state-of-the-art research (from IEEE and arXiv).
+    prompt = f"""You are an elite academic peer reviewer and AI judge. Analyze the hackathon submission below against published state-of-the-art research (from Semantic Scholar, IEEE, Google Scholar, and arXiv).
 
 Problem Domain: {context.problem_domain}
 Target Beneficiary: {context.target_beneficiary}
@@ -225,7 +286,7 @@ Stated Problem: {problem_statement_text[:300]}
 Team's Proposal / Deck Content:
 {deck_text[:2500]}
 
-Published Academic Literature & Existing Baselines Found (IEEE, arXiv):
+Published Academic Literature & Existing Baselines Found (Semantic Scholar, IEEE, arXiv):
 {papers_context}
 
 Produce a rigorous scientific evaluation comparing the team's system against existing solutions:
@@ -259,7 +320,6 @@ Produce a rigorous scientific evaluation comparing the team's system against exi
         }
         async with httpx.AsyncClient(timeout=45.0) as client:
             resp = await post_with_backoff(client, payload, settings.groq_api_key)
-        import json
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
         parsed = json.loads(content)
@@ -271,7 +331,7 @@ Produce a rigorous scientific evaluation comparing the team's system against exi
             better_than_existing_aspects=parsed["better_than_existing_aspects"],
             limitations_and_tradeoffs=parsed["limitations_and_tradeoffs"],
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.warning("Academic benchmark synthesis failed, using rule-based synthesis: %s", exc)
         return AcademicBenchmark(
             papers=papers,

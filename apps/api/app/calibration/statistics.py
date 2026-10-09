@@ -77,7 +77,7 @@ def spearman_rank_correlation(x: list[float], y: list[float]) -> float:
     if len(x) != len(y):
         raise ValueError("x and y must be the same length")
     if len(x) < 2:
-        return 1.0
+        raise ValueError("spearman rank correlation requires at least 2 data points")
     try:
         return statistics.correlation(_average_ranks(x), _average_ranks(y))
     except (statistics.StatisticsError, ValueError):

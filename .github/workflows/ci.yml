@@ -10,8 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -29,4 +27,4 @@ jobs:
           python-version: "3.11"
       - run: pip install ruff mypy -e apps/api
       - run: ruff check apps/api
-      - run: mypy apps/api
+      - run: mypy --config-file apps/api/pyproject.toml apps/api

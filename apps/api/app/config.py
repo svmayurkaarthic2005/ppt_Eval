@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str = ""
     database_url: str = ""
     libreoffice_path: str = ""
+    semantic_scholar_api_key: str = ""
 
 
 

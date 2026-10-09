@@ -31,7 +31,7 @@ HIGH_MAE_THRESHOLD = 2.0  # marks out of 40
 MEDIUM_MAE_THRESHOLD = 5.0
 
 
-def _label_from_mae(mae: float | None, max_score: int) -> ReliabilityLabel:
+def _label_from_mae(mae: float | None, max_score: float) -> ReliabilityLabel:
     if mae is None:
         # No calibration evidence for this score range yet -- can't claim
         # HIGH confidence without an empirical basis for it.
@@ -53,7 +53,7 @@ def _label_from_flag_severities(severities: list[str]) -> ReliabilityLabel:
 
 
 def derive_reliability_label(
-    max_score: int,
+    max_score: float,
     nearest_calibration_mae: float | None,
     consistency_flag_severities: list[str],
     has_needs_human_review_criterion: bool,
