@@ -5,6 +5,7 @@ import RankingTable from "../components/RankingTable";
 import { useConfirm } from "../components/ConfirmDialog";
 import {
   ApiError,
+  createProblemStatement,
   deleteProblemStatement,
   deleteSubmission,
   deleteTeam,
@@ -15,7 +16,7 @@ import {
   setManualRank,
   triggerStage2Selection,
 } from "../lib/api";
-import type { ProblemStatementGroup, RankingRow } from "@hackeval/types";
+import type { ProblemStatement, ProblemStatementGroup, RankingRow } from "@hackeval/types";
 
 const AUTO_EXPAND_MAX_SIZE = 10;
 const MIN_COMPARE = 2;
@@ -32,24 +33,37 @@ function StatCard({
   icon,
   gradient,
   subtext,
+  onClick,
 }: {
   label: string;
   value: number | null;
   icon: React.ReactNode;
   gradient: string;
   subtext?: string;
+  onClick?: () => void;
 }) {
   return (
-    <div className="stitch-card rounded-2xl p-4 sm:p-5 flex items-center justify-between relative overflow-hidden group">
+    <div
+      onClick={onClick}
+      className={`stitch-card rounded-2xl p-4 sm:p-5 flex items-center justify-between relative overflow-hidden group ${
+        onClick ? "cursor-pointer hover:border-indigo-300 transition-all" : ""
+      }`}
+    >
       <div className="flex items-center gap-4">
-        <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-md ${gradient} transition-transform group-hover:scale-105`}>
+        <div
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-md ${gradient} transition-transform group-hover:scale-105`}
+        >
           {icon}
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
           <div className="flex items-baseline gap-2 mt-0.5">
             <span className="text-2xl sm:text-3xl font-extrabold tracking-tight tabular-nums text-slate-900">
-              {value === null ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-200" /> : value}
+              {value === null ? (
+                <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-200" />
+              ) : (
+                value
+              )}
             </span>
             {subtext && <span className="text-xs font-medium text-slate-600">{subtext}</span>}
           </div>
@@ -78,11 +92,29 @@ function TableSkeleton() {
   );
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({
+  title = "No Teams Evaluated Yet",
+  message,
+  actionText = "Upload Deck to Begin",
+  actionTo = "/upload",
+  onActionClick,
+}: {
+  title?: string;
+  message: string;
+  actionText?: string;
+  actionTo?: string;
+  onActionClick?: () => void;
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 bg-white/70 py-16 px-4 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500 shadow-sm">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-7 w-7">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          className="h-7 w-7"
+        >
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -90,14 +122,163 @@ function EmptyState({ message }: { message: string }) {
           />
         </svg>
       </div>
-      <h3 className="text-base font-semibold text-slate-800">No Teams Evaluated Yet</h3>
+      <h3 className="text-base font-semibold text-slate-800">{title}</h3>
       <p className="text-sm text-slate-500 max-w-sm">{message}</p>
-      <Link
-        to="/upload"
-        className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
+      {onActionClick ? (
+        <button
+          type="button"
+          onClick={onActionClick}
+          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
+        >
+          {actionText}
+        </button>
+      ) : (
+        <Link
+          to={actionTo}
+          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
+        >
+          {actionText}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function AddProblemStatementModal({
+  isOpen,
+  onClose,
+  onCreated,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [referenceText, setReferenceText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const cleanTitle = title.trim();
+    if (!cleanTitle) {
+      setError("Please provide a title for the problem statement.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await createProblemStatement({
+        title: cleanTitle,
+        reference_text: referenceText.trim(),
+      });
+      setTitle("");
+      setReferenceText("");
+      onCreated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create problem statement.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+      <div
+        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden transform transition-all"
+        onClick={(e) => e.stopPropagation()}
       >
-        Upload Deck to Begin
-      </Link>
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-purple-50/50">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </span>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Add Problem Statement</h2>
+              <p className="text-xs text-slate-500">Create a new competition domain track</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="ps-title" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+              Domain / Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="ps-title"
+              type="text"
+              autoFocus
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. AI-Powered Early Crop Disease Detection"
+              className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/20"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="ps-ref" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+              Reference Details & Context <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <textarea
+              id="ps-ref"
+              rows={4}
+              value={referenceText}
+              onChange={(e) => setReferenceText(e.target.value)}
+              placeholder="Provide background context, challenge requirements, constraints, or evaluation goals for this problem statement..."
+              className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/20 resize-none"
+            />
+          </div>
+
+          <div className="mt-2 flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-xl px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !title.trim()}
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-700 transition disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Saving...
+                </>
+              ) : (
+                "Save Problem Statement"
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -190,9 +371,10 @@ function ProblemStatementGroupCard({
 
 export default function Home() {
   const confirm = useConfirm();
-  const [view, setView] = useState<"overall" | "by-problem-statement">("overall");
+  const [view, setView] = useState<"overall" | "by-problem-statement" | "manage">("overall");
   const [overall, setOverall] = useState<RankingRow[] | null>(null);
   const [groups, setGroups] = useState<ProblemStatementGroup[] | null>(null);
+  const [allProblemStatements, setAllProblemStatements] = useState<ProblemStatement[] | null>(null);
   const [totalSubmitted, setTotalSubmitted] = useState<number | null>(null);
   const [totalScored, setTotalScored] = useState<number | null>(null);
   const [totalProblemStatements, setTotalProblemStatements] = useState<number | null>(null);
@@ -202,15 +384,10 @@ export default function Home() {
   const [stage2Message, setStage2Message] = useState<string | null>(null);
   const [triggeringStage2, setTriggeringStage2] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
-  // Rankings only change while some submission is actually being processed;
-  // polling them on a fixed timer regardless of that wastes 2 extra API
-  // calls every tick for as long as the tab is left open (and indefinitely,
-  // since this page has no terminal state to stop at the way a single
-  // submission's own status does). loadDashboardStats's return value says
-  // whether anything is in flight right now, so the poll can skip the
-  // ranking refetch whenever nothing is.
   function loadDashboardStats(): Promise<boolean> {
     return getDashboard().then((rows) => {
       setTotalSubmitted(rows.length);
@@ -233,14 +410,26 @@ export default function Home() {
       .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load rankings."));
   }
 
+  function loadProblemStatementsData() {
+    listProblemStatements()
+      .then((rows) => {
+        setAllProblemStatements(rows);
+        setTotalProblemStatements(rows.length);
+      })
+      .catch(() => {});
+  }
+
   useEffect(() => {
     loadRankings();
     loadDashboardStats();
-    listProblemStatements().then((rows) => setTotalProblemStatements(rows.length));
+    loadProblemStatementsData();
 
     const interval = setInterval(() => {
       loadDashboardStats().then((inProgress) => {
-        if (inProgress) loadRankings();
+        if (inProgress) {
+          loadRankings();
+          loadProblemStatementsData();
+        }
       });
     }, 4000);
     return () => clearInterval(interval);
@@ -290,24 +479,29 @@ export default function Home() {
       }
       loadRankings();
       loadDashboardStats();
+      loadProblemStatementsData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete team");
     }
   }
 
-  async function handleDeleteGroup(group: ProblemStatementGroup) {
+  async function handleDeleteProblemStatementById(id: string, title: string) {
     const ok = await confirm(
-      `Delete problem statement "${group.title}"?\n\nAll submissions evaluating against this problem statement will also be deleted.`,
+      `Delete problem statement "${title}"?\n\nAll associated submissions and evaluations referencing this domain will be permanently deleted.`,
     );
     if (!ok) return;
     try {
-      await deleteProblemStatement(group.problem_statement_id);
+      await deleteProblemStatement(id);
       loadRankings();
       loadDashboardStats();
-      listProblemStatements().then((rows) => setTotalProblemStatements(rows.length));
+      loadProblemStatementsData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete problem statement");
     }
+  }
+
+  async function handleDeleteGroup(group: ProblemStatementGroup) {
+    await handleDeleteProblemStatementById(group.problem_statement_id, group.title);
   }
 
   function toggleSelected(submissionId: string) {
@@ -328,6 +522,25 @@ export default function Home() {
 
   const overallSectionKeys = useMemo(() => sectionKeysOf(overall ?? []), [overall]);
   const loading = overall === null || groups === null;
+
+  // Filtered problem statements for management view
+  const filteredProblemStatements = useMemo(() => {
+    if (!allProblemStatements) return [];
+    if (!searchQuery.trim()) return allProblemStatements;
+    const q = searchQuery.toLowerCase();
+    return allProblemStatements.filter(
+      (ps) =>
+        ps.title.toLowerCase().includes(q) ||
+        (ps.reference_text && ps.reference_text.toLowerCase().includes(q)),
+    );
+  }, [allProblemStatements, searchQuery]);
+
+  // Identify empty problem statements (ones without submissions in groups)
+  const emptyProblemStatements = useMemo(() => {
+    if (!allProblemStatements || !groups) return [];
+    const activeIds = new Set(groups.map((g) => g.problem_statement_id));
+    return allProblemStatements.filter((ps) => !activeIds.has(ps.id));
+  }, [allProblemStatements, groups]);
 
   if (error) {
     return (
@@ -363,19 +576,32 @@ export default function Home() {
             Hackathon Leaderboard
           </h1>
           <p className="mt-1 text-sm text-slate-500 max-w-2xl">
-            Live evaluation scores, grounded in peer-reviewed literature across IEEE and arXiv.
+            Live evaluation scores grounded in peer-reviewed literature with domain-specific rankings.
           </p>
         </div>
 
-        <Link
-          to="/upload"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          Upload Submission Deck
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-bold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50/70 hover:border-indigo-300"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Problem Statement
+          </button>
+
+          <Link
+            to="/upload"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            Upload Deck
+          </Link>
+        </div>
       </div>
 
       {pinError && (
@@ -449,7 +675,8 @@ export default function Home() {
         <StatCard
           label="Active Problem Statements"
           value={totalProblemStatements}
-          subtext="Domains evaluated"
+          subtext="Click to manage domains"
+          onClick={() => setView("manage")}
           gradient="bg-gradient-to-br from-purple-500 to-pink-600"
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-6 w-6">
@@ -463,33 +690,63 @@ export default function Home() {
         />
       </div>
 
-      {/* View Segmented Switcher */}
-      <div className="flex items-center justify-between">
+      {/* View Segmented Switcher & Action Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="inline-flex rounded-xl bg-slate-200/70 p-1 border border-slate-300/40">
           {(
             [
               { key: "overall" as const, label: "Overall Standings" },
               { key: "by-problem-statement" as const, label: "Grouped By Problem Statement" },
+              {
+                key: "manage" as const,
+                label: "Manage Problem Statements",
+                badge: totalProblemStatements !== null ? totalProblemStatements : undefined,
+              },
             ]
           ).map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setView(tab.key)}
-              className={`rounded-lg px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-150 ${
+              className={`flex items-center gap-2 rounded-lg px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-150 ${
                 view === tab.key
                   ? "bg-white text-indigo-700 shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.badge !== undefined && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                    view === tab.key
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "bg-slate-300/70 text-slate-700"
+                  }`}
+                >
+                  {tab.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
+
+        {view !== "manage" && (
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="self-start sm:self-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            Add New Problem Statement
+          </button>
+        )}
       </div>
 
       {loading && <TableSkeleton />}
 
+      {/* View 1: Overall Standings */}
       {!loading && view === "overall" && overall!.length === 0 && (
         <EmptyState message="No submissions have completed scoring yet." />
       )}
@@ -505,11 +762,17 @@ export default function Home() {
         />
       )}
 
-      {!loading && view === "by-problem-statement" && groups!.length === 0 && (
-        <EmptyState message="No submissions have completed scoring yet." />
+      {/* View 2: Grouped by Problem Statement */}
+      {!loading && view === "by-problem-statement" && groups!.length === 0 && emptyProblemStatements.length === 0 && (
+        <EmptyState
+          title="No Problem Statements or Submissions"
+          message="Create a problem statement or upload a presentation to generate domain rankings."
+          actionText="Add Problem Statement"
+          onActionClick={() => setIsAddModalOpen(true)}
+        />
       )}
 
-      {!loading && view === "by-problem-statement" && groups!.length > 0 && (
+      {!loading && view === "by-problem-statement" && (groups!.length > 0 || emptyProblemStatements.length > 0) && (
         <div className="flex flex-col gap-4">
           {groups!.map((group) => (
             <ProblemStatementGroupCard
@@ -522,6 +785,191 @@ export default function Home() {
               onDeleteGroup={handleDeleteGroup}
             />
           ))}
+
+          {/* Display empty problem statements that have no submissions yet */}
+          {emptyProblemStatements.map((ps) => (
+            <div
+              key={ps.id}
+              className="stitch-card overflow-hidden rounded-2xl border-dashed border-2 border-slate-200 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/60"
+            >
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-sm sm:text-base">{ps.title}</h3>
+                  <p className="text-xs text-slate-500">
+                    {ps.reference_text
+                      ? ps.reference_text.slice(0, 100) + (ps.reference_text.length > 100 ? "..." : "")
+                      : "No teams evaluated yet for this domain."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <Link
+                  to="/upload"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Upload Deck
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteProblemStatementById(ps.id, ps.title)}
+                  title={`Delete problem statement "${ps.title}"`}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* View 3: Dedicated Problem Statements Manager */}
+      {!loading && view === "manage" && (
+        <div className="flex flex-col gap-4">
+          <div className="stitch-card rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Manage Problem Statements</h2>
+              <p className="text-xs text-slate-500">
+                View, create, and remove problem statements. Deleting a problem statement cleans up associated decks and rankings.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search problem statements..."
+                  className="w-full sm:w-64 rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-600/20"
+                />
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  className="absolute left-3 top-2.5 h-4 w-4 text-slate-400"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-700 transition"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Statement
+              </button>
+            </div>
+          </div>
+
+          {filteredProblemStatements.length === 0 ? (
+            <EmptyState
+              title={searchQuery ? "No Matching Statements Found" : "No Problem Statements Registered"}
+              message={
+                searchQuery
+                  ? `No problem statements match "${searchQuery}".`
+                  : "Add your first competition problem statement to begin domain-based evaluations."
+              }
+              actionText="Add Problem Statement"
+              onActionClick={() => setIsAddModalOpen(true)}
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredProblemStatements.map((ps) => {
+                const subCount = groups?.find((g) => g.problem_statement_id === ps.id)?.submission_count ?? 0;
+                return (
+                  <div
+                    key={ps.id}
+                    className="stitch-card rounded-2xl p-5 flex flex-col justify-between gap-4 border border-slate-200/80 hover:border-indigo-300 transition-all group"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                            {ps.is_custom ? "Custom" : "Official Domain"}
+                          </span>
+                        </div>
+
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                            subCount > 0
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                              : "bg-slate-100 text-slate-600 border border-slate-200/60"
+                          }`}
+                        >
+                          {subCount} {subCount === 1 ? "team" : "teams"}
+                        </span>
+                      </div>
+
+                      <h3 className="mt-3 text-base font-bold text-slate-900 group-hover:text-indigo-600 transition">
+                        {ps.title}
+                      </h3>
+
+                      <p className="mt-1.5 text-xs text-slate-500 line-clamp-3 leading-relaxed">
+                        {ps.reference_text || (
+                          <span className="italic text-slate-400">No detailed reference context provided.</span>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+                      <span className="text-[11px] text-slate-400">
+                        {new Date(ps.created_at).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </span>
+
+                      <div className="flex items-center gap-2">
+                        <Link
+                          to="/upload"
+                          className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Upload Deck
+                        </Link>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProblemStatementById(ps.id, ps.title)}
+                          title={`Delete problem statement "${ps.title}"`}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -539,6 +987,16 @@ export default function Home() {
           </button>
         </div>
       )}
+
+      {/* Add Problem Statement Modal */}
+      <AddProblemStatementModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onCreated={() => {
+          loadProblemStatementsData();
+          loadRankings();
+        }}
+      />
     </main>
   );
 }

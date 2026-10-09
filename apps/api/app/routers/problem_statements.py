@@ -3,6 +3,7 @@ from uuid import UUID
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.models.schemas import ProblemStatement
 from app.routers.submissions import get_db_pool
@@ -11,14 +12,42 @@ from app.storage_cleanup import cleanup_submission_storage
 router = APIRouter(prefix="/problem-statements", tags=["problem-statements"])
 
 
+class ProblemStatementCreate(BaseModel):
+    title: str
+    reference_text: str = ""
+    is_custom: bool = False
+
+
 @router.get("/", response_model=list[ProblemStatement])
 async def list_problem_statements(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[ProblemStatement]:
-    """Backs the upload form's searchable dropdown (Step: pick a problem
-    statement). A new one is created implicitly by POST /submissions when
-    no existing id is picked -- there's no separate create endpoint."""
+    """Backs the upload form's searchable dropdown and management views."""
     async with pool.acquire() as conn:
         rows = await conn.fetch("select * from problem_statements order by title")
     return [ProblemStatement(**dict(row)) for row in rows]
+
+
+@router.post("/", response_model=ProblemStatement, status_code=201)
+async def create_problem_statement(
+    payload: ProblemStatementCreate, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> ProblemStatement:
+    """Creates a new problem statement directly from the UI."""
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Title cannot be empty")
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            insert into problem_statements (title, reference_text, is_custom)
+            values ($1, $2, $3)
+            returning *
+            """,
+            title,
+            payload.reference_text.strip(),
+            payload.is_custom,
+        )
+    if row is None:
+        raise HTTPException(status_code=500, detail="Failed to create problem statement")
+    return ProblemStatement(**dict(row))
 
 
 @router.delete("/{problem_statement_id}")

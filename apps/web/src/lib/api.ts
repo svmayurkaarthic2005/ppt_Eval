@@ -231,6 +231,19 @@ export async function deleteSubmission(
   return parseOrThrow(response);
 }
 
+export async function createProblemStatement(data: {
+  title: string;
+  reference_text?: string;
+  is_custom?: boolean;
+}): Promise<ProblemStatement> {
+  const response = await fetch(`${API_URL}/problem-statements/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return parseOrThrow(response);
+}
+
 export async function deleteProblemStatement(
   problemStatementId: string,
 ): Promise<{ deleted: boolean; problem_statement_id: string; title: string }> {
