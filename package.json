@@ -1,0 +1,14 @@
+{
+  "name": "hackeval",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "pnpm --filter ./packages/* run build && pnpm --filter web run build",
+    "lint": "pnpm --filter web run lint && ruff check apps/api",
+    "typecheck": "pnpm --filter web run typecheck && mypy apps/api"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

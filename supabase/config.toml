@@ -1,0 +1,10 @@
+project_id = "hackeval"
+
+[db]
+port = 54322
+
+[api]
+port = 54321
+
+[storage]
+enabled = true

@@ -1,0 +1,582 @@
+from typing import Any
+from uuid import UUID
+
+import asyncpg
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+from app.storage_cleanup import cleanup_submission_storage
+
+from app.auth import get_current_user_id
+from app.comparison import (
+    ComparisonResponse,
+    RubricVersionMismatchError,
+    SubmissionNotFoundError,
+    build_comparison,
+    parse_and_dedupe_ids,
+    validate_count,
+)
+from app.dashboard import DashboardRow, get_dashboard_rows
+from app.evidence.traceability import (
+    SubmissionAuditOut,
+    SubmissionEvidenceOut,
+    SubmissionSlidesOut,
+    get_submission_audit,
+    get_submission_evidence,
+    get_submission_slides,
+)
+from app.extraction import (
+    MAX_PPTX_BYTES,
+    MAX_PROBLEM_STATEMENT_BYTES,
+    extract_text,
+    is_usable,
+)
+from app.models.schemas import Submission, SubmissionContext
+from app.pipeline import extract_problem_statement
+from app.pipeline.orchestrator import RankedSubmission, get_ranked_submissions, run_stage2_selection
+from app.supabase_client import get_service_client
+
+router = APIRouter(prefix="/submissions", tags=["submissions"])
+
+ALLOWED_PROBLEM_STATEMENT_EXTENSIONS = {"pdf", "docx", "txt"}
+_EXTENSION_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "txt": "text/plain",
+}
+_PPTX_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+)
+
+
+def _extension_of(filename: str | None) -> str:
+    if not filename or "." not in filename:
+        return ""
+    return filename.rsplit(".", 1)[-1].lower()
+
+
+def _derive_problem_statement_title(text: str) -> str:
+    """Caps the title at ~80 chars for display, same budget as the
+    problem_statements migration's backfill, but cuts at a word boundary
+    and marks the cut with an ellipsis instead of lopping off mid-word."""
+    stripped = text.strip()
+    if not stripped:
+        return "Untitled problem statement"
+    if len(stripped) <= 80:
+        return stripped
+    truncated = stripped[:80].rsplit(" ", 1)[0].rstrip(",;:-—") or stripped[:80]
+    return f"{truncated}…"
+
+
+def get_db_pool(request: Request) -> asyncpg.Pool:
+    pool = request.app.state.db_pool
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Job queue database is not configured")
+    return pool
+
+
+async def _get_or_create_team(conn: asyncpg.Connection, owner_user_id: str, name: str) -> UUID:
+    existing = await conn.fetchrow("select id from teams where owner_user_id = $1", owner_user_id)
+    if existing is not None:
+        return existing["id"]
+
+    created = await conn.fetchrow(
+        "insert into teams (name, owner_user_id) values ($1, $2) returning id",
+        name,
+        owner_user_id,
+    )
+    return created["id"]
+
+
+@router.get("/", response_model=list[Submission])
+async def list_submissions() -> list[Submission]:
+    """Not yet implemented: will list submissions from Supabase."""
+    return []
+
+
+@router.post("/preview-problem-statement")
+async def preview_problem_statement(
+    problem_statement: UploadFile = File(...),
+) -> dict[str, object]:
+    """Stateless preview for Step 1 of the upload form: extracts and returns
+    text without creating a submission (the pptx isn't chosen yet)."""
+    extension = _extension_of(problem_statement.filename)
+    if extension not in ALLOWED_PROBLEM_STATEMENT_EXTENSIONS:
+        raise HTTPException(
+            status_code=422, detail="Problem statement must be .pdf, .docx, or .txt"
+        )
+
+    content = await problem_statement.read()
+    if len(content) > MAX_PROBLEM_STATEMENT_BYTES:
+        raise HTTPException(status_code=413, detail="Problem statement exceeds 10MB")
+
+    text = extract_text(content, _EXTENSION_CONTENT_TYPES[extension])
+    return {"text": text, "usable": is_usable(text)}
+
+
+@router.post("/", response_model=Submission, status_code=201)
+async def create_submission(
+    team_name: str = Form(...),
+    problem_statement_file: UploadFile | None = File(None),
+    problem_statement_text: str | None = Form(None),
+    problem_statement_id: str | None = Form(None),
+    pptx: UploadFile = File(...),
+    owner_user_id: str = Depends(get_current_user_id),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> Submission:
+    existing_ps_id: UUID | None = None
+    if problem_statement_id:
+        try:
+            existing_ps_id = UUID(problem_statement_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Malformed problem_statement_id") from exc
+
+    has_file = problem_statement_file is not None and bool(problem_statement_file.filename)
+    typed_text = (problem_statement_text or "").strip()
+    has_text = bool(typed_text)
+
+    if existing_ps_id is not None:
+        # Reusing an existing problem statement -- its full text was
+        # captured once, when it was first added, and is never re-collected
+        # from a team that's just reusing it.
+        has_file = False
+        has_text = False
+        typed_text = ""
+    elif has_file and has_text:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide either a problem statement file or typed text, not both",
+        )
+    elif not has_file and not has_text:
+        raise HTTPException(
+            status_code=422, detail="A problem statement (file or typed text) is required"
+        )
+
+    ps_extension = ""
+    ps_content = b""
+    if has_file:
+        assert problem_statement_file is not None
+        ps_extension = _extension_of(problem_statement_file.filename)
+        if ps_extension not in ALLOWED_PROBLEM_STATEMENT_EXTENSIONS:
+            raise HTTPException(
+                status_code=422, detail="Problem statement must be .pdf, .docx, or .txt"
+            )
+        ps_content = await problem_statement_file.read()
+        if len(ps_content) > MAX_PROBLEM_STATEMENT_BYTES:
+            raise HTTPException(status_code=413, detail="Problem statement exceeds 10MB")
+
+    if _extension_of(pptx.filename) != "pptx":
+        raise HTTPException(status_code=422, detail="Slide deck must be .pptx")
+
+    pptx_content = await pptx.read()
+    if len(pptx_content) > MAX_PPTX_BYTES:
+        raise HTTPException(status_code=413, detail="Slide deck exceeds 50MB")
+
+    async with pool.acquire() as conn, conn.transaction():
+        team_id = await _get_or_create_team(conn, owner_user_id, team_name)
+
+        # The grouping key for ranking is a deliberate, explicit choice made
+        # at upload time -- never fuzzy-matched. If the team picked an
+        # existing problem statement from the dropdown, use it as-is;
+        # otherwise ("this isn't listed") create a new custom one now, with
+        # its title derived from whichever problem statement content the
+        # team already provided.
+        if existing_ps_id is not None:
+            found = await conn.fetchrow(
+                "select id, reference_text from problem_statements where id = $1", existing_ps_id
+            )
+            if found is None:
+                raise HTTPException(status_code=422, detail="problem_statement_id not found")
+            ps_id = existing_ps_id
+            # The team picked this from the dropdown rather than typing/
+            # uploading anything this time -- reuse the text captured when
+            # it was first added, so grounding (Phase 5) works exactly as
+            # it would have if they'd retyped it.
+            typed_text = found["reference_text"]
+            has_text = True
+        else:
+            ps_reference_text = (
+                typed_text
+                if has_text
+                else extract_text(ps_content, _EXTENSION_CONTENT_TYPES[ps_extension])
+            )
+            ps_id = (
+                await conn.fetchrow(
+                    """
+                    insert into problem_statements (title, reference_text, is_custom, created_by_team_id)
+                    values ($1, $2, true, $3)
+                    returning id
+                    """,
+                    _derive_problem_statement_title(ps_reference_text),
+                    ps_reference_text,
+                    team_id,
+                )
+            )["id"]
+
+        # pptx_storage_path is NOT NULL and embeds the submission id, so
+        # insert a placeholder, then fill in the real path once the id is
+        # known. problem_statement_storage_path stays NULL for typed text.
+        submission_id: UUID
+        if has_file:
+            submission_id = (
+                await conn.fetchrow(
+                    """
+                    insert into submissions
+                        (team_id, problem_statement_id, pptx_storage_path, problem_statement_source,
+                         problem_statement_storage_path, status)
+                    values ($1, $2, 'pending', 'uploaded', 'pending', 'uploaded')
+                    returning id
+                    """,
+                    team_id,
+                    ps_id,
+                )
+            )["id"]
+        else:
+            submission_id = (
+                await conn.fetchrow(
+                    """
+                    insert into submissions
+                        (team_id, problem_statement_id, pptx_storage_path, problem_statement_source,
+                         problem_statement_text, status)
+                    values ($1, $2, 'pending', 'typed', $3, 'uploaded')
+                    returning id
+                    """,
+                    team_id,
+                    ps_id,
+                    typed_text,
+                )
+            )["id"]
+
+        pptx_path = f"{submission_id}/original.pptx"
+        storage = get_service_client().storage
+        storage.from_("pptx-uploads").upload(
+            pptx_path, pptx_content, {"content-type": _PPTX_CONTENT_TYPE}
+        )
+
+        if has_file:
+            ps_path = f"{submission_id}/original.{ps_extension}"
+            storage.from_("problem-statements").upload(
+                ps_path, ps_content, {"content-type": _EXTENSION_CONTENT_TYPES[ps_extension]}
+            )
+            await conn.execute(
+                """
+                update submissions
+                set pptx_storage_path = $2, problem_statement_storage_path = $3
+                where id = $1
+                """,
+                submission_id,
+                pptx_path,
+                ps_path,
+            )
+        else:
+            await conn.execute(
+                "update submissions set pptx_storage_path = $2 where id = $1",
+                submission_id,
+                pptx_path,
+            )
+
+        # Extraction is fast and deterministic (no LLM call), so it runs
+        # synchronously here rather than waiting a poll interval for the
+        # worker to pick it up -- it's the exact same code path as
+        # POST /submissions/{id}/extract-problem-statement, so a later
+        # re-run stays consistent. For typed text this just validates word
+        # count (no download/parsing needed); for an uploaded file it
+        # downloads and parses as before.
+        await extract_problem_statement(conn, submission_id)
+        row = await conn.fetchrow("select * from submissions where id = $1", submission_id)
+
+    return Submission(**dict(row))
+
+
+@router.post("/stage2-selection")
+async def trigger_stage2_selection(
+    top_n: int = 10, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> dict[str, list[UUID]]:
+    """Admin-triggered: looks across every submission that's finished
+    Stage 1, selects the top-N plus anything flagged/manually requested,
+    and enqueues their Stage 2 jobs. Registered before /{submission_id} so
+    "stage2-selection" is never mistaken for a submission id."""
+    async with pool.acquire() as conn:
+        selected = await run_stage2_selection(conn, top_n=top_n)
+    return {"selected_submission_ids": selected}
+
+
+@router.get("/ranking", response_model=list[RankedSubmission])
+async def get_ranking(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[RankedSubmission]:
+    """Stage 3: one ranked list combining Stage-1-only and fully Stage-2-scored
+    submissions, each tagged with which stage produced its score. Registered
+    before /{submission_id} so "ranking" is never mistaken for a submission id."""
+    async with pool.acquire() as conn:
+        return await get_ranked_submissions(conn)
+
+
+@router.get("/dashboard", response_model=list[DashboardRow])
+async def get_dashboard(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[DashboardRow]:
+    """Phase 14: the /dashboard page's full data set in one call -- sorting
+    and filtering happen client-side. Registered before /{submission_id} so
+    "dashboard" is never mistaken for a submission id."""
+    async with pool.acquire() as conn:
+        return await get_dashboard_rows(conn)
+
+
+@router.get("/compare", response_model=None)
+async def compare_submissions(
+    ids: str = Query(..., description="Comma-separated submission ids, 2-6 distinct"),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> ComparisonResponse | JSONResponse:
+    """Phase 15. Registered before /{submission_id} so "compare" is never
+    mistaken for a submission id."""
+    try:
+        parsed_ids = parse_and_dedupe_ids(ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Malformed submission id: {exc}") from exc
+
+    # Count is validated before any query runs, per spec.
+    try:
+        validate_count(parsed_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    async with pool.acquire() as conn:
+        try:
+            return await build_comparison(conn, parsed_ids)
+        except SubmissionNotFoundError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Submission(s) not found: {', '.join(str(i) for i in exc.missing_ids)}",
+            ) from exc
+        except RubricVersionMismatchError as exc:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "rubric_version_mismatch",
+                    "details": [
+                        {
+                            "submission_id": str(d["submission_id"]),
+                            "rubric_template_id": str(d["rubric_template_id"]),
+                        }
+                        for d in exc.details
+                    ],
+                },
+            )
+
+
+@router.get("/{submission_id}", response_model=Submission)
+async def get_submission(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Submission:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            select s.*, t.name as team_name, ps.title as problem_statement_title
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join problem_statements ps on ps.id = s.problem_statement_id
+            where s.id = $1
+            """,
+            submission_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return Submission(**dict(row))
+
+
+@router.post("/{submission_id}/extract-problem-statement", response_model=Submission)
+async def rerun_extract_problem_statement(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Submission:
+    async with pool.acquire() as conn, conn.transaction():
+        await extract_problem_statement(conn, submission_id)
+        row = await conn.fetchrow("select * from submissions where id = $1", submission_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return Submission(**dict(row))
+
+
+@router.get("/{submission_id}/evidence", response_model=SubmissionEvidenceOut)
+async def get_evidence(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> SubmissionEvidenceOut:
+    async with pool.acquire() as conn:
+        submission = await conn.fetchrow("select id from submissions where id = $1", submission_id)
+        if submission is None:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        return await get_submission_evidence(conn, submission_id)
+
+
+@router.get("/{submission_id}/slides", response_model=SubmissionSlidesOut)
+async def get_slides(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> SubmissionSlidesOut:
+    """Lets a viewer see the original deck: a signed download link for the
+    .pptx plus a signed image per rendered slide."""
+    async with pool.acquire() as conn:
+        submission = await conn.fetchrow("select id from submissions where id = $1", submission_id)
+        if submission is None:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        return await get_submission_slides(conn, submission_id)
+
+
+@router.get("/{submission_id}/audit", response_model=SubmissionAuditOut)
+async def get_audit(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> SubmissionAuditOut:
+    async with pool.acquire() as conn:
+        submission = await conn.fetchrow("select id from submissions where id = $1", submission_id)
+        if submission is None:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        return await get_submission_audit(conn, submission_id)
+
+
+@router.post("/{submission_id}/request-review", response_model=Submission)
+async def request_manual_review(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Submission:
+    """An admin manually marks a submission for Stage 2 (full) analysis,
+    regardless of its Stage 1 preliminary score."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            update submissions set manual_review_requested = true
+            where id = $1
+            returning *
+            """,
+            submission_id,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return Submission(**dict(row))
+
+
+class SetManualRankBody(BaseModel):
+    manual_rank: int | None
+
+
+@router.patch("/{submission_id}/rank", response_model=Submission)
+async def set_manual_rank(
+    submission_id: UUID, body: SetManualRankBody, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Submission:
+    """Admin pin: overrides this submission's computed rank. Pinned
+    submissions sort first (by their own pin number, ascending) ahead of
+    everyone else, in both /rankings/overall and its problem-statement
+    group -- see app/rankings. Pass manual_rank: null to unpin."""
+    if body.manual_rank is not None and body.manual_rank < 1:
+        raise HTTPException(status_code=422, detail="manual_rank must be 1 or greater")
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "update submissions set manual_rank = $2 where id = $1 returning *",
+            submission_id,
+            body.manual_rank,
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return Submission(**dict(row))
+
+
+@router.post("/{submission_id}/benchmark", response_model=Submission)
+async def generate_benchmark_for_submission(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Submission:
+    """Explicitly triggers or refreshes the academic & literature benchmark
+    (IEEE, Google Scholar / CrossRef, arXiv) for a submission."""
+    async with pool.acquire() as conn:
+        sub = await conn.fetchrow(
+            """
+            select s.*, t.name as team_name, ps.title as ps_title, ps.reference_text as ps_reference_text
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join problem_statements ps on ps.id = s.problem_statement_id
+            where s.id = $1
+            """,
+            submission_id,
+        )
+        if sub is None:
+            raise HTTPException(status_code=404, detail="Submission not found")
+
+        slides = await conn.fetch(
+            "select slide_number, raw_text from slides where submission_id = $1 order by slide_number",
+            submission_id,
+        )
+        from app.research.scholarly import fetch_academic_literature, generate_academic_benchmark
+        deck_text = "\n".join(f"[Slide {s['slide_number']}] {s['raw_text'] or ''}" for s in slides)
+        context = SubmissionContext(**(sub["submission_context"] or {
+            "problem_domain": sub["ps_title"] or "Artificial Intelligence",
+            "target_beneficiary": "Domain Practitioners & Researchers",
+            "required_deliverables": [],
+            "track_constraints": [],
+            "is_generic": False,
+        }))
+        papers = await fetch_academic_literature(
+            domain=context.problem_domain,
+            problem_text=sub["ps_reference_text"] or sub["ps_title"] or "",
+            deck_sample=deck_text[:1000],
+        )
+        bench = await generate_academic_benchmark(
+            context=context,
+            problem_statement_text=sub["ps_reference_text"] or sub["ps_title"] or "",
+            deck_text=deck_text,
+            papers=papers,
+        )
+        benchmark_dict = bench.model_dump()
+        # Passed as a dict, not json.dumps(...) -- see the matching comment
+        # in app.pipeline.orchestrator; dumping it here too would double-
+        # encode it through the pool's jsonb codec.
+        await conn.execute(
+            "update submissions set academic_benchmark = $2 where id = $1",
+            submission_id,
+            benchmark_dict,
+        )
+        row = await conn.fetchrow(
+            """
+            select s.*, t.name as team_name, ps.title as problem_statement_title
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join problem_statements ps on ps.id = s.problem_statement_id
+            where s.id = $1
+            """,
+            submission_id,
+        )
+        return Submission(**dict(row))
+
+
+@router.delete("/{submission_id}")
+async def delete_submission(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> dict[str, Any]:
+    """Permanently deletes a submission, its slides, scores, and storage files.
+    If this was the team's only submission, also cleans up the team."""
+    async with pool.acquire() as conn:
+        sub = await conn.fetchrow(
+            "select id, team_id, pptx_storage_path, problem_statement_storage_path from submissions where id = $1",
+            submission_id,
+        )
+        if sub is None:
+            raise HTTPException(status_code=404, detail="Submission not found")
+
+        slide_rows = await conn.fetch(
+            "select unnest(image_storage_paths) as path from slides where submission_id = $1",
+            submission_id,
+        )
+        image_paths = [r["path"] for r in slide_rows if r["path"]]
+
+        cleanup_submission_storage(
+            sub["pptx_storage_path"],
+            sub["problem_statement_storage_path"],
+            image_paths,
+        )
+
+        team_id = sub["team_id"]
+        await conn.execute("delete from submissions where id = $1", submission_id)
+
+        remaining = await conn.fetchval(
+            "select count(*) from submissions where team_id = $1", team_id
+        )
+        if remaining == 0:
+            await conn.execute(
+                "update problem_statements set created_by_team_id = null where created_by_team_id = $1",
+                team_id,
+            )
+            await conn.execute("delete from teams where id = $1", team_id)
+
+    return {"deleted": True, "submission_id": str(submission_id), "team_id": str(team_id)}

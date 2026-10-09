@@ -1,0 +1,249 @@
+import type {
+  CalibrationCandidate,
+  CalibrationRun,
+  CalibrationRunSummary,
+  ComparisonResponse,
+  DashboardRow,
+  ProblemStatement,
+  ProblemStatementGroup,
+  RankingRow,
+  RubricVersionMismatchErrorBody,
+  Submission,
+  SubmissionAudit,
+  SubmissionEvidence,
+  SubmissionSlides,
+} from "@hackeval/types";
+
+import { getAccessToken } from "./supabaseClient";
+
+const API_URL = import.meta.env.VITE_API_URL;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
+
+async function parseOrThrow<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new ApiError(body.detail ?? response.statusText, response.status);
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function previewProblemStatement(
+  file: File,
+): Promise<{ text: string; usable: boolean }> {
+  const form = new FormData();
+  form.append("problem_statement", file);
+  const response = await fetch(`${API_URL}/submissions/preview-problem-statement`, {
+    method: "POST",
+    body: form,
+  });
+  return parseOrThrow(response);
+}
+
+export type ProblemStatementInput = { mode: "typed"; text: string } | { mode: "file"; file: File };
+
+/**
+ * Uses XMLHttpRequest (not fetch) specifically to get real upload-progress
+ * events for the pptx -- a 50MB upload can take several seconds on a slow
+ * connection, and `onProgress` drives Step 2's progress bar from actual
+ * bytes sent, not a fake timer.
+ */
+export function createSubmission(
+  fields: {
+    teamName: string;
+    // Only set when adding a brand new problem statement -- reusing an
+    // existing one (problemStatementId set) never re-sends its text/file.
+    problemStatement: ProblemStatementInput | null;
+    problemStatementId: string | null;
+    pptx: File;
+  },
+  onProgress?: (fraction: number) => void,
+): Promise<Submission> {
+  return getAccessToken().then(
+    (token) =>
+      new Promise<Submission>((resolve, reject) => {
+        const form = new FormData();
+        form.append("team_name", fields.teamName);
+        if (fields.problemStatementId) {
+          form.append("problem_statement_id", fields.problemStatementId);
+        } else if (fields.problemStatement?.mode === "typed") {
+          form.append("problem_statement_text", fields.problemStatement.text);
+        } else if (fields.problemStatement?.mode === "file") {
+          form.append("problem_statement_file", fields.problemStatement.file);
+        }
+        form.append("pptx", fields.pptx);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${API_URL}/submissions/`);
+        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+        xhr.upload.onprogress = (e) => {
+          if (onProgress && e.lengthComputable) onProgress(e.loaded / e.total);
+        };
+
+        xhr.onload = () => {
+          let body: Record<string, unknown> = {};
+          try {
+            body = JSON.parse(xhr.responseText);
+          } catch {
+            // non-JSON response; fall through with empty body
+          }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(body as unknown as Submission);
+          } else {
+            reject(
+              new ApiError((body.detail as string | undefined) ?? xhr.statusText, xhr.status),
+            );
+          }
+        };
+        xhr.onerror = () => reject(new ApiError("Network error while submitting", 0));
+        xhr.send(form);
+      }),
+  );
+}
+
+export async function getSubmission(id: string): Promise<Submission> {
+  const response = await fetch(`${API_URL}/submissions/${id}`);
+  return parseOrThrow(response);
+}
+
+export async function listCalibrationCandidates(): Promise<CalibrationCandidate[]> {
+  const response = await fetch(`${API_URL}/calibration/candidates`);
+  return parseOrThrow(response);
+}
+
+export async function listCalibrationRuns(): Promise<CalibrationRun[]> {
+  const response = await fetch(`${API_URL}/calibration/runs`);
+  return parseOrThrow(response);
+}
+
+export interface CalibrationRunSubmissionInput {
+  submission_id: string;
+  human_section_scores: { section_key: string; human_score: number }[];
+}
+
+export async function createCalibrationRun(
+  submissions: CalibrationRunSubmissionInput[],
+  notes?: string,
+): Promise<CalibrationRunSummary> {
+  const response = await fetch(`${API_URL}/calibration/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ submissions, notes: notes ?? null }),
+  });
+  return parseOrThrow(response);
+}
+
+export async function getSubmissionEvidence(id: string): Promise<SubmissionEvidence> {
+  const response = await fetch(`${API_URL}/submissions/${id}/evidence`);
+  return parseOrThrow(response);
+}
+
+export async function getSubmissionSlides(id: string): Promise<SubmissionSlides> {
+  const response = await fetch(`${API_URL}/submissions/${id}/slides`);
+  return parseOrThrow(response);
+}
+
+export async function getSubmissionAudit(id: string): Promise<SubmissionAudit> {
+  const response = await fetch(`${API_URL}/submissions/${id}/audit`);
+  return parseOrThrow(response);
+}
+
+export async function getDashboard(): Promise<DashboardRow[]> {
+  const response = await fetch(`${API_URL}/submissions/dashboard`);
+  return parseOrThrow(response);
+}
+
+export async function getOverallRanking(): Promise<RankingRow[]> {
+  const response = await fetch(`${API_URL}/rankings/overall`);
+  return parseOrThrow(response);
+}
+
+export async function getRankingByProblemStatement(): Promise<ProblemStatementGroup[]> {
+  const response = await fetch(`${API_URL}/rankings/by-problem-statement`);
+  return parseOrThrow(response);
+}
+
+export async function listProblemStatements(): Promise<ProblemStatement[]> {
+  const response = await fetch(`${API_URL}/problem-statements/`);
+  return parseOrThrow(response);
+}
+
+/** Admin pin: overrides a submission's computed rank. null clears the pin. */
+/** Stage 1 (cheap triage) runs automatically for every submission, but
+ * Stage 2 (full per-criterion scoring) only runs for submissions an admin
+ * selects -- top-N by preliminary score, plus anything flagged or manually
+ * requested. Without this, a submission sits at 'analyzing' forever. */
+export async function triggerStage2Selection(): Promise<{ selected_submission_ids: string[] }> {
+  const response = await fetch(`${API_URL}/submissions/stage2-selection`, { method: "POST" });
+  return parseOrThrow(response);
+}
+
+export async function setManualRank(
+  submissionId: string,
+  manualRank: number | null,
+): Promise<Submission> {
+  const response = await fetch(`${API_URL}/submissions/${submissionId}/rank`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manual_rank: manualRank }),
+  });
+  return parseOrThrow(response);
+}
+
+export class RubricMismatchError extends Error {
+  constructor(public body: RubricVersionMismatchErrorBody) {
+    super("rubric_version_mismatch");
+  }
+}
+
+export async function getComparison(ids: string[]): Promise<ComparisonResponse> {
+  const response = await fetch(
+    `${API_URL}/submissions/compare?ids=${encodeURIComponent(ids.join(","))}`,
+  );
+  if (response.status === 422) {
+    const body = await response.json().catch(() => null);
+    if (body?.error === "rubric_version_mismatch") {
+      throw new RubricMismatchError(body as RubricVersionMismatchErrorBody);
+    }
+  }
+  return parseOrThrow(response);
+}
+
+export async function deleteTeam(
+  teamId: string,
+): Promise<{ deleted: boolean; team_id: string; team_name: string }> {
+  const response = await fetch(`${API_URL}/teams/${teamId}`, { method: "DELETE" });
+  return parseOrThrow(response);
+}
+
+export async function deleteSubmission(
+  submissionId: string,
+): Promise<{ deleted: boolean; submission_id: string; team_id: string }> {
+  const response = await fetch(`${API_URL}/submissions/${submissionId}`, { method: "DELETE" });
+  return parseOrThrow(response);
+}
+
+export async function deleteProblemStatement(
+  problemStatementId: string,
+): Promise<{ deleted: boolean; problem_statement_id: string; title: string }> {
+  const response = await fetch(`${API_URL}/problem-statements/${problemStatementId}`, {
+    method: "DELETE",
+  });
+  return parseOrThrow(response);
+}
+
+export async function generateAcademicBenchmark(submissionId: string): Promise<Submission> {
+  const response = await fetch(`${API_URL}/submissions/${submissionId}/benchmark`, {
+    method: "POST",
+  });
+  return parseOrThrow(response);
+}
+
