@@ -42,31 +42,47 @@ POOL_CONNECT_RETRIES = 3
 POOL_CONNECT_TIMEOUT_SECONDS = 30
 
 
+def _resolve_supabase_pooler_url(url: str) -> str | None:
+    import re
+    m = re.match(r"^postgresql://([^:]+):([^@]+)@db\.([a-zA-Z0-9]+)\.supabase\.co(?::\d+)?/(.*)$", url)
+    if m:
+        user, password, ref, db = m.groups()
+        pooler_user = f"postgres.{ref}" if user == "postgres" else user
+        return f"postgresql://{pooler_user}:{password}@aws-0-ap-northeast-1.pooler.supabase.com:5432/{db}"
+    return None
+
+
 async def create_pool() -> asyncpg.Pool | None:
     database_url = get_settings().database_url
     if not database_url:
         logger.warning("DATABASE_URL not set; job queue worker disabled")
         return None
 
-    # The direct Supabase connection's SSL handshake occasionally stalls for
-    # well over asyncpg's default timeout on this network path -- without a
-    # retry, one slow attempt takes the whole app down at startup rather
-    # than just being slow once.
+    urls_to_try = [database_url]
+    pooler_fallback = _resolve_supabase_pooler_url(database_url)
+    if pooler_fallback and pooler_fallback != database_url:
+        urls_to_try.append(pooler_fallback)
+
     last_error: Exception | None = None
-    for attempt in range(1, POOL_CONNECT_RETRIES + 1):
-        try:
-            return await asyncpg.create_pool(
-                database_url,
-                min_size=1,
-                max_size=5,
-                init=_register_jsonb_codec,
-                timeout=POOL_CONNECT_TIMEOUT_SECONDS,
-            )
-        except (TimeoutError, OSError) as exc:
-            last_error = exc
-            logger.warning(
-                "DB pool connect attempt %d/%d failed: %s", attempt, POOL_CONNECT_RETRIES, exc
-            )
+    for current_url in urls_to_try:
+        for attempt in range(1, POOL_CONNECT_RETRIES + 1):
+            try:
+                return await asyncpg.create_pool(
+                    current_url,
+                    min_size=1,
+                    max_size=5,
+                    init=_register_jsonb_codec,
+                    timeout=POOL_CONNECT_TIMEOUT_SECONDS,
+                )
+            except (TimeoutError, OSError) as exc:
+                last_error = exc
+                logger.warning(
+                    "DB pool connect attempt %d/%d failed for %s: %s",
+                    attempt,
+                    POOL_CONNECT_RETRIES,
+                    current_url.split("@")[-1],
+                    exc,
+                )
     raise RuntimeError("Could not connect to DATABASE_URL after retries") from last_error
 
 
