@@ -283,6 +283,172 @@ function AddProblemStatementModal({
   );
 }
 
+function RemoveProblemStatementModal({
+  isOpen,
+  onClose,
+  problemStatements,
+  groups,
+  onRemoved,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  problemStatements: ProblemStatement[] | null;
+  groups: ProblemStatementGroup[] | null;
+  onRemoved: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (problemStatements && problemStatements.length > 0 && !selectedId) {
+      setSelectedId(problemStatements[0].id);
+    }
+  }, [problemStatements, selectedId]);
+
+  if (!isOpen) return null;
+
+  const currentPs = problemStatements?.find((p) => p.id === selectedId);
+  const subCount = groups?.find((g) => g.problem_statement_id === selectedId)?.submission_count ?? 0;
+
+  async function handleDelete(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedId || !currentPs) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await deleteProblemStatement(selectedId);
+      onRemoved();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove problem statement.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+      <div
+        className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden transform transition-all"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-red-50/50 to-orange-50/50">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-600 text-white shadow-md shadow-red-600/25">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </span>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Remove Problem Statement</h2>
+              <p className="text-xs text-slate-500">Delete an existing domain track and all associated evaluations</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={handleDelete} className="p-6 flex flex-col gap-4">
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+              {error}
+            </div>
+          )}
+
+          {!problemStatements || problemStatements.length === 0 ? (
+            <p className="text-sm text-slate-500 py-4 text-center">
+              No problem statements available to remove.
+            </p>
+          ) : (
+            <>
+              <div>
+                <label htmlFor="ps-select" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Select Problem Statement to Remove
+                </label>
+                <select
+                  id="ps-select"
+                  value={selectedId}
+                  onChange={(e) => setSelectedId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-900 bg-white focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-600/20"
+                >
+                  {problemStatements.map((ps) => {
+                    const c = groups?.find((g) => g.problem_statement_id === ps.id)?.submission_count ?? 0;
+                    return (
+                      <option key={ps.id} value={ps.id}>
+                        {ps.title} ({c} {c === 1 ? "team" : "teams"})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {currentPs && (
+                <div className="rounded-xl bg-slate-50 border border-slate-200/80 p-4 text-xs space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-700">Domain Overview:</span>
+                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                      {subCount} {subCount === 1 ? "team" : "teams"} attached
+                    </span>
+                  </div>
+                  <p className="font-semibold text-slate-900 text-sm">{currentPs.title}</p>
+                  {currentPs.reference_text && (
+                    <p className="text-slate-500 line-clamp-2">{currentPs.reference_text}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 flex gap-3 items-start">
+                <svg className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  <strong>Warning:</strong> Removing this problem statement will also permanently delete all decks, evaluations, and rankings attached to it.
+                </p>
+              </div>
+            </>
+          )}
+
+          <div className="mt-2 flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={deleting}
+              className="rounded-xl px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={deleting || !selectedId}
+              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-red-600/25 hover:bg-red-700 transition disabled:opacity-50"
+            >
+              {deleting ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Removing...
+                </>
+              ) : (
+                "Permanently Remove"
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function ProblemStatementGroupCard({
   group,
   selected,
@@ -339,18 +505,20 @@ function ProblemStatementGroupCard({
             </span>
           </div>
         </button>
+
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onDeleteGroup(group);
           }}
-          title={`Delete problem statement "${group.title}"`}
-          className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 opacity-60 hover:bg-red-50 hover:text-red-600 hover:opacity-100 transition"
+          title={`Remove problem statement "${group.title}"`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-red-200/80 bg-red-50/70 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 transition"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
+          Remove
         </button>
       </div>
       {expanded && (
@@ -385,6 +553,7 @@ export default function Home() {
   const [triggeringStage2, setTriggeringStage2] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
 
@@ -580,11 +749,11 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm font-bold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50/70 hover:border-indigo-300"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50/70 hover:border-indigo-300"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -592,9 +761,20 @@ export default function Home() {
             Add Problem Statement
           </button>
 
+          <button
+            type="button"
+            onClick={() => setIsRemoveModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-red-700 shadow-sm transition-all hover:bg-red-100 hover:border-red-300"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Remove Problem Statement
+          </button>
+
           <Link
             to="/upload"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -675,7 +855,7 @@ export default function Home() {
         <StatCard
           label="Active Problem Statements"
           value={totalProblemStatements}
-          subtext="Click to manage domains"
+          subtext="Click to manage & remove"
           onClick={() => setView("manage")}
           gradient="bg-gradient-to-br from-purple-500 to-pink-600"
           icon={
@@ -730,18 +910,29 @@ export default function Home() {
           ))}
         </div>
 
-        {view !== "manage" && (
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
-            className="self-start sm:self-auto inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            Add New Problem Statement
+            Add New Statement
           </button>
-        )}
+          <span className="text-slate-300">•</span>
+          <button
+            type="button"
+            onClick={() => setIsRemoveModalOpen(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-800 transition"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Remove Statement
+          </button>
+        </div>
       </div>
 
       {loading && <TableSkeleton />}
@@ -821,12 +1012,13 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => handleDeleteProblemStatementById(ps.id, ps.title)}
-                  title={`Delete problem statement "${ps.title}"`}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                  title={`Remove problem statement "${ps.title}"`}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 transition"
                 >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
+                  Remove
                 </button>
               </div>
             </div>
@@ -841,7 +1033,7 @@ export default function Home() {
             <div>
               <h2 className="text-lg font-bold text-slate-900">Manage Problem Statements</h2>
               <p className="text-xs text-slate-500">
-                View, create, and remove problem statements. Deleting a problem statement cleans up associated decks and rankings.
+                View, create, and remove problem statements. Removing a problem statement clears associated decks and domain rankings.
               </p>
             </div>
 
@@ -865,16 +1057,29 @@ export default function Home() {
                 </svg>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(true)}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-700 transition"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                Add Statement
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-700 transition"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Statement
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsRemoveModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50/70 px-3.5 py-2 text-xs font-bold text-red-700 hover:bg-red-100 hover:border-red-300 transition"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Remove Statement
+                </button>
+              </div>
             </div>
           </div>
 
@@ -956,12 +1161,13 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => handleDeleteProblemStatementById(ps.id, ps.title)}
-                          title={`Delete problem statement "${ps.title}"`}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition"
+                          title={`Remove problem statement "${ps.title}"`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50/70 px-2.5 py-1 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 transition"
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
+                          Remove
                         </button>
                       </div>
                     </div>
@@ -995,6 +1201,19 @@ export default function Home() {
         onCreated={() => {
           loadProblemStatementsData();
           loadRankings();
+        }}
+      />
+
+      {/* Remove Problem Statement Modal */}
+      <RemoveProblemStatementModal
+        isOpen={isRemoveModalOpen}
+        onClose={() => setIsRemoveModalOpen(false)}
+        problemStatements={allProblemStatements}
+        groups={groups}
+        onRemoved={() => {
+          loadProblemStatementsData();
+          loadRankings();
+          loadDashboardStats();
         }}
       />
     </main>
