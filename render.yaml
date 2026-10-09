@@ -29,12 +29,11 @@ services:
   # -------------------------------------------------------------
   # Frontend Static Site (Vite + React + Tailwind + Stitch UI)
   # -------------------------------------------------------------
-  - type: web
+  - type: static
     name: hackeval-web
     runtime: static
     buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile=false && pnpm --filter web build
     staticPublishPath: ./apps/web/dist
-    plan: free
     routes:
       - type: rewrite
         source: /*
