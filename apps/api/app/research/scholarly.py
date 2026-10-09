@@ -41,11 +41,11 @@ async def fetch_semantic_scholar_papers(query: str, max_results: int = 4) -> lis
     """Queries Semantic Scholar Graph API using the configured S2 API key from .env."""
     settings = get_settings()
     api_key = (settings.semantic_scholar_api_key or "").strip()
+    if not api_key:
+        return []
     papers: list[ScholarlyPaper] = []
     try:
-        headers = {"User-Agent": _USER_AGENT}
-        if api_key:
-            headers["x-api-key"] = api_key
+        headers = {"User-Agent": _USER_AGENT, "x-api-key": api_key}
         url = "https://api.semanticscholar.org/graph/v1/paper/search"
         params: dict[str, str | int] = {
             "query": query,

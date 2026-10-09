@@ -21,8 +21,6 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: SEMANTIC_SCHOLAR_API_KEY
-        sync: false
       - key: PYTHONUNBUFFERED
         value: "1"
 
@@ -32,7 +30,7 @@ services:
   - type: web
     name: hackeval-web
     runtime: static
-    buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile=false && pnpm --filter web build
+    buildCommand: pnpm install --frozen-lockfile=false && pnpm --filter web build
     staticPublishPath: ./apps/web/dist
     routes:
       - type: rewrite
