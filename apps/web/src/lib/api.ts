@@ -16,7 +16,7 @@ import type {
 
 import { getAccessToken } from "./supabaseClient";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8002";
 
 export class ApiError extends Error {
   constructor(

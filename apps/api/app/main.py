@@ -65,10 +65,8 @@ app = FastAPI(title="HackEval API", version="0.0.1", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    # Vite picks the next free port when 5173 is taken (e.g. by a leftover
-    # dev process), so dev origins are matched by regex rather than a fixed
-    # port list.
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    # Allow local dev as well as deployed Render services (*.onrender.com)
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|.*\.onrender\.com)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

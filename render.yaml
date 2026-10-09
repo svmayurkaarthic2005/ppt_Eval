@@ -1,0 +1,48 @@
+services:
+  # -------------------------------------------------------------
+  # Backend API (FastAPI + LibreOffice headless for slide renders)
+  # -------------------------------------------------------------
+  - type: web
+    name: hackeval-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: SEMANTIC_SCHOLAR_API_KEY
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+  # -------------------------------------------------------------
+  # Frontend Static Site (Vite + React + Tailwind + Stitch UI)
+  # -------------------------------------------------------------
+  - type: web
+    name: hackeval-web
+    runtime: static
+    buildCommand: npm install -g pnpm && pnpm install --frozen-lockfile=false && pnpm --filter web build
+    staticPublishPath: ./apps/web/dist
+    plan: free
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
