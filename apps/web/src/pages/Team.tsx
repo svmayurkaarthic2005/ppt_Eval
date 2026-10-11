@@ -675,7 +675,7 @@ function CostAffordabilitySection({
             Process Components & Cost Affordability Analysis
           </h2>
           <p className="mt-0.5 text-xs text-slate-600">
-            Calculates required chemicals, reagents, process equipment, utilities & environmental compliance items to verify realistic industrial affordability.
+            For physical-process solutions, estimates required chemicals, equipment, utilities, and compliance costs. Software/AI-only solutions are marked not applicable here rather than given a misleading physical BOM cost.
           </p>
         </div>
 
