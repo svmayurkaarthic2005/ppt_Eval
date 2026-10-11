@@ -2,7 +2,6 @@ import type {
   AcademicBenchmark,
   CostAnalysis,
   CriterionEvidenceView,
-  ProjectComponent,
   SlideView,
   Submission,
   SubmissionAudit,

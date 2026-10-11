@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
-from pydantic import BaseModel, Field
 
 import httpx
+from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.llm.client import FALLBACK_TEXT_MODEL, GROQ_CHAT_URL, GROQ_MODEL, post_with_backoff
+from app.llm.client import FALLBACK_TEXT_MODEL, GROQ_MODEL, post_with_backoff
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
 from app.models.schemas import SubmissionContext
 
@@ -247,7 +246,7 @@ async def generate_cost_analysis(
                 if cells:
                     table_rows.append(" | ".join(cells))
         if table_rows:
-            table_context = f"\n\nTables Extracted From Slides:\n" + "\n".join(table_rows)
+            table_context = "\n\nTables Extracted From Slides:\n" + "\n".join(table_rows)
 
     system_prompt = (
         "You are an expert chemical process engineering estimator and environmental hackathon judge. "
