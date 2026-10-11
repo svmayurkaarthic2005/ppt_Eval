@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff mypy -e apps/api
+      - run: pip install ruff mypy pytest pytest-asyncio hypothesis -e apps/api
       - run: ruff check apps/api
       - run: mypy --config-file apps/api/pyproject.toml apps/api
+      - run: pytest apps/api/tests -q
