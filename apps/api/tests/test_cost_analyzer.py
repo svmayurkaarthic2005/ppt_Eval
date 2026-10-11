@@ -264,7 +264,7 @@ def test_sanitizer_does_not_keep_high_cost_verdict_when_all_items_are_filtered()
     assert sanitized.missing_components_count == 0
     assert sanitized.affordability_verdict == "not_applicable"
     assert sanitized.affordability_score_recommendation == 0.0
-    assert "does not mean" in sanitized.affordability_analysis
+    assert "does not prove" in sanitized.affordability_analysis
 
 def test_sanitizer_marks_empty_model_bom_not_applicable():
     analysis = CostAnalysis(
