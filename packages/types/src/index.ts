@@ -103,7 +103,7 @@ export interface CostAnalysis {
   total_estimated_cost: number;
   cost_difference: number | null;
   missing_components_count: number;
-  affordability_verdict: "highly_affordable" | "moderate_realistic" | "underestimated_missing_components" | "expensive_high_barrier";
+  affordability_verdict: "not_applicable" | "highly_affordable" | "moderate_realistic" | "underestimated_missing_components" | "expensive_high_barrier";
   affordability_score_recommendation: number;
   affordability_analysis: string;
   components: ProjectComponent[];
