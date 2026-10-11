@@ -5,6 +5,8 @@ from app.research.cost_analyzer import (
     CostAnalysis,
     _detect_currency,
     _fallback_cost_analysis,
+    _sanitize_cost_analysis,
+    ProjectComponent,
     generate_cost_analysis,
 )
 
@@ -185,3 +187,82 @@ def test_excludes_subscriptions_and_cloud_services():
     assert "AWS Cloud Compute Subscription" not in component_names
     assert "Claude Sonnet API Subscription" not in component_names
     assert sanitized.total_estimated_cost == 18000.0
+
+@pytest.mark.asyncio
+async def test_software_first_qml_project_marks_physical_bom_not_applicable():
+    context = SubmissionContext(
+        problem_domain="Quantum Machine Learning for Crop Stress Detection",
+        target_beneficiary="Farmers",
+        required_deliverables=["QML software pipeline"],
+        track_constraints=[],
+        is_generic=False,
+        generic_reason=None,
+    )
+    deck_text = (
+        "A purely software-based Quantum Machine Learning (QML) pipeline for crop stress detection. "
+        "The implementation uses cloud-based quantum simulators and Qiskit Aer. "
+        "No physical hardware, chemicals, or industrial processing is required."
+    )
+
+    from app.research.cost_analyzer import _is_software_first_project
+
+    assert _is_software_first_project(context, deck_text)
+    result = await generate_cost_analysis(
+        context=context,
+        problem_statement_text="Detect crop stress with a QML pipeline",
+        deck_text=deck_text,
+    )
+    assert result.affordability_verdict == "not_applicable"
+    assert result.components == []
+    assert result.total_estimated_cost == 0.0
+    assert result.cost_difference is None
+    assert "not quantified" in result.affordability_analysis.lower()
+    assert "not evidence" in result.affordability_analysis.lower()
+
+
+def test_sanitizer_does_not_keep_high_cost_verdict_when_all_items_are_filtered():
+    analysis = CostAnalysis(
+        currency="INR",
+        total_declared_cost=0.0,
+        total_estimated_cost=250000.0,
+        cost_difference=250000.0,
+        missing_components_count=3,
+        affordability_verdict="expensive_high_barrier",
+        affordability_score_recommendation=0.2,
+        affordability_analysis="Cloud GPU and API subscriptions are expensive.",
+        components=[
+            ProjectComponent(
+                name="Cloud GPU Compute Subscription",
+                category="other",
+                is_declared_by_team=False,
+                declared_cost=None,
+                estimated_market_cost=150000.0,
+                currency="INR",
+                source_name="Online",
+                source_url="",
+                notes="Cloud compute subscription for QML simulation",
+            ),
+            ProjectComponent(
+                name="Quantum Runtime API Credits",
+                category="other",
+                is_declared_by_team=False,
+                declared_cost=None,
+                estimated_market_cost=100000.0,
+                currency="INR",
+                source_name="Online",
+                source_url="",
+                notes="API subscription credits",
+            ),
+        ],
+    )
+
+    sanitized = _sanitize_cost_analysis(analysis)
+    assert sanitized.components == []
+    assert sanitized.total_estimated_cost == 0.0
+    assert sanitized.total_declared_cost is None
+    assert sanitized.cost_difference is None
+    assert sanitized.missing_components_count == 0
+    assert sanitized.affordability_verdict == "not_applicable"
+    assert sanitized.affordability_score_recommendation == 0.0
+    assert "does not mean" in sanitized.affordability_analysis
+
