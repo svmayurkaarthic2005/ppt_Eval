@@ -42,7 +42,7 @@ class CostAnalysis(BaseModel):
     cost_difference: float | None = Field(default=None, description="Difference between estimated realistic cost and declared cost")
     missing_components_count: int = Field(description="Number of critical components required by the architecture that the team omitted")
     affordability_verdict: str = Field(
-        description="'highly_affordable', 'moderate_realistic', 'underestimated_missing_components', or 'expensive_high_barrier'"
+        description="'not_applicable', 'highly_affordable', 'moderate_realistic', 'underestimated_missing_components', or 'expensive_high_barrier'"
     )
     affordability_score_recommendation: float = Field(
         description="Recommended score on a 0.0 to 2.0 scale for the cost_affordability rubric criterion"
@@ -64,6 +64,7 @@ _COST_ANALYSIS_JSON_SCHEMA = {
         "affordability_verdict": {
             "type": "string",
             "enum": [
+                "not_applicable",
                 "highly_affordable",
                 "moderate_realistic",
                 "underestimated_missing_components",
@@ -269,11 +270,12 @@ def _sanitize_cost_analysis(analysis: CostAnalysis) -> CostAnalysis:
     """Post-processes all components to ensure robust, clickable, verified links,
     strictly INR currency, and filters out any subscription plans or cloud services (AWS, Kaggle, Claude, etc.)."""
     analysis.currency = "INR"
+    original_component_count = len(analysis.components)
     filtered_components: list[ProjectComponent] = []
 
     for c in analysis.components:
         if _is_subscription_or_cloud(c.name, c.category, c.notes):
-            logger.info("Excluding subscription/cloud component from BOM cost evaluation: %s", c.name)
+            logger.info("Excluding subscription/cloud component from physical BOM evaluation: %s", c.name)
             continue
         c.currency = "INR"
         resolved_name, resolved_url = _resolve_source_info(
@@ -286,7 +288,22 @@ def _sanitize_cost_analysis(analysis: CostAnalysis) -> CostAnalysis:
     analysis.components = filtered_components
     analysis.total_estimated_cost = round(sum(c.estimated_market_cost for c in filtered_components), 2)
     analysis.missing_components_count = sum(1 for c in filtered_components if not c.is_declared_by_team)
-    if analysis.total_declared_cost is not None:
+
+    # Crucial consistency guard: never retain a cost-barrier verdict from cloud
+    # subscriptions that were subsequently removed from the physical BOM.
+    if original_component_count > 0 and not filtered_components:
+        analysis.total_declared_cost = None
+        analysis.cost_difference = None
+        analysis.missing_components_count = 0
+        analysis.affordability_verdict = "not_applicable"
+        analysis.affordability_score_recommendation = 0.0
+        analysis.affordability_analysis = (
+            "No physical chemicals, equipment, or environmental-compliance components remain after "
+            "excluding software/cloud services. This physical BOM assessment is not applicable; it "
+            "does not mean the software solution is free. Evaluate hosting, compute, data licensing, "
+            "and operations separately if they are in scope."
+        )
+    elif analysis.total_declared_cost is not None:
         analysis.cost_difference = round(analysis.total_estimated_cost - analysis.total_declared_cost, 2)
     return analysis
 
@@ -319,15 +336,14 @@ def _is_software_first_project(context: SubmissionContext, deck_text: str) -> bo
 
 
 def _software_cost_analysis(deck_text: str) -> CostAnalysis:
-    """Return an explicitly incomplete assessment rather than inventing software prices."""
-    lowered = deck_text.lower()
+    """Mark the physical BOM as not applicable without pretending software costs are zero."""
     return CostAnalysis(
         currency="INR",
         total_declared_cost=None,
         total_estimated_cost=0.0,
         cost_difference=None,
         missing_components_count=0,
-        affordability_verdict="moderate_realistic",
+        affordability_verdict="not_applicable",
         affordability_score_recommendation=0.0,
         affordability_analysis=(
             "This is a software/AI-first solution, so a chemical-process BOM is not applicable. "
