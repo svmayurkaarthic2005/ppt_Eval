@@ -3,10 +3,10 @@ import pytest
 from app.models.schemas import SubmissionContext
 from app.research.cost_analyzer import (
     CostAnalysis,
+    ProjectComponent,
     _detect_currency,
     _fallback_cost_analysis,
     _sanitize_cost_analysis,
-    ProjectComponent,
     generate_cost_analysis,
 )
 
