@@ -14,8 +14,10 @@ async def main():
     print("Connected to DB. Adding cost_analysis column to submissions...")
     await conn.execute("""
         alter table submissions add column if not exists cost_analysis jsonb;
+        alter table submissions add column if not exists is_stale boolean default false;
+        alter table submissions add column if not exists evaluation_version integer default 1;
     """)
-    print("Column cost_analysis added successfully!")
+    print("Columns cost_analysis, is_stale, evaluation_version updated successfully!")
     cols = await conn.fetch("select column_name from information_schema.columns where table_name = 'submissions'")
     print("Columns on submissions now:", [c["column_name"] for c in cols])
     await conn.close()

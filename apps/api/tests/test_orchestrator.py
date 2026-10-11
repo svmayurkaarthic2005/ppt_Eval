@@ -73,3 +73,82 @@ def test_merge_rankings_tags_score_source_correctly():
 
 def test_merge_rankings_empty_inputs_yields_empty_list():
     assert merge_rankings([], []) == []
+
+
+# --- Stage 1 Section Scores Validation Tests ---
+
+import pytest
+
+from app.pipeline.orchestrator import Stage1ValidationError, validate_stage1_section_scores
+
+
+def test_validate_stage1_section_scores_valid():
+    expected_keys = ["problem_understanding", "existing_solutions", "proposed_solution", "feasibility", "execution_plan"]
+    scores = [
+        {"section_key": "problem_understanding", "score": 8},
+        {"section_key": "existing_solutions", "score": 7},
+        {"section_key": "proposed_solution", "score": 9},
+        {"section_key": "feasibility", "score": 6},
+        {"section_key": "execution_plan", "score": 8},
+    ]
+    total = validate_stage1_section_scores(scores, expected_keys)
+    assert total == 38
+
+
+def test_validate_stage1_section_scores_missing_key():
+    expected_keys = ["sec1", "sec2", "sec3"]
+    scores = [
+        {"section_key": "sec1", "score": 7},
+        {"section_key": "sec2", "score": 8},
+    ]
+    with pytest.raises(Stage1ValidationError, match="Missing required section keys"):
+        validate_stage1_section_scores(scores, expected_keys)
+
+
+def test_validate_stage1_section_scores_unexpected_key():
+    expected_keys = ["sec1", "sec2"]
+    scores = [
+        {"section_key": "sec1", "score": 7},
+        {"section_key": "sec2", "score": 8},
+        {"section_key": "extra_bonus", "score": 5},
+    ]
+    with pytest.raises(Stage1ValidationError, match="Unexpected section_key"):
+        validate_stage1_section_scores(scores, expected_keys)
+
+
+def test_validate_stage1_section_scores_duplicate_key():
+    expected_keys = ["sec1", "sec2"]
+    scores = [
+        {"section_key": "sec1", "score": 7},
+        {"section_key": "sec1", "score": 8},
+    ]
+    with pytest.raises(Stage1ValidationError, match="Duplicate section_key"):
+        validate_stage1_section_scores(scores, expected_keys)
+
+
+def test_validate_stage1_section_scores_out_of_bounds():
+    expected_keys = ["sec1", "sec2"]
+    # Negative score
+    with pytest.raises(Stage1ValidationError, match="out of bounds"):
+        validate_stage1_section_scores([{"section_key": "sec1", "score": -1}, {"section_key": "sec2", "score": 5}], expected_keys)
+
+    # Score > 10
+    with pytest.raises(Stage1ValidationError, match="out of bounds"):
+        validate_stage1_section_scores([{"section_key": "sec1", "score": 11}, {"section_key": "sec2", "score": 5}], expected_keys)
+
+
+def test_validate_stage1_section_scores_non_integer():
+    expected_keys = ["sec1", "sec2"]
+    with pytest.raises(Stage1ValidationError, match="must be an integer"):
+        validate_stage1_section_scores([{"section_key": "sec1", "score": 7.5}, {"section_key": "sec2", "score": 5}], expected_keys)
+
+
+def test_validate_stage1_section_scores_non_numeric():
+    expected_keys = ["sec1"]
+    with pytest.raises(Stage1ValidationError, match="not numeric"):
+        validate_stage1_section_scores([{"section_key": "sec1", "score": "eight"}], expected_keys)
+
+    # Boolean is not allowed as numeric score
+    with pytest.raises(Stage1ValidationError, match="not numeric"):
+        validate_stage1_section_scores([{"section_key": "sec1", "score": True}], expected_keys)
+

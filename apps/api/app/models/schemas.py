@@ -102,6 +102,8 @@ class Submission(BaseModel):
     preliminary_score: float | None = None
     academic_benchmark: dict[str, Any] | None = None
     cost_analysis: dict[str, Any] | None = None
+    is_stale: bool = False
+    evaluation_version: int = 1
 
     @field_validator("academic_benchmark", "submission_context", "cost_analysis", mode="before")
     @classmethod

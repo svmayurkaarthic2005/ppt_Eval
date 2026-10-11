@@ -267,4 +267,11 @@ export async function generateCostAnalysis(submissionId: string): Promise<Submis
   return parseOrThrow(response);
 }
 
+export async function reEvaluateSubmission(submissionId: string): Promise<Submission> {
+  const response = await fetch(`${API_URL}/submissions/${submissionId}/re-evaluate`, {
+    method: "POST",
+  });
+  return parseOrThrow(response);
+}
+
 

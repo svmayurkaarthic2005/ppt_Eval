@@ -12,6 +12,7 @@ from app.comparison import (
     RubricVersionMismatchError,
     SubmissionNotFoundError,
     build_comparison,
+    invalidate_for_submission,
     parse_and_dedupe_ids,
     validate_count,
 )
@@ -518,14 +519,30 @@ async def generate_benchmark_for_submission(
             papers=papers,
         )
         benchmark_dict = bench.model_dump()
-        # Passed as a dict, not json.dumps(...) -- see the matching comment
-        # in app.pipeline.orchestrator; dumping it here too would double-
-        # encode it through the pool's jsonb codec.
-        await conn.execute(
-            "update submissions set academic_benchmark = $2 where id = $1",
-            submission_id,
-            benchmark_dict,
-        )
+        is_already_scored = sub["status"] == "scored"
+        if is_already_scored:
+            await conn.execute(
+                "update submissions set academic_benchmark = $2, is_stale = true where id = $1",
+                submission_id,
+                benchmark_dict,
+            )
+            invalidate_for_submission(submission_id)
+            active_job = await conn.fetchval(
+                "select 1 from jobs where submission_id = $1 and job_type = 'stage2_deep_analysis' and status in ('queued', 'running')",
+                submission_id,
+            )
+            if not active_job:
+                await conn.execute(
+                    "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
+                    submission_id,
+                )
+        else:
+            await conn.execute(
+                "update submissions set academic_benchmark = $2 where id = $1",
+                submission_id,
+                benchmark_dict,
+            )
+
         row = await conn.fetchrow(
             """
             select s.*, t.name as team_name, ps.title as problem_statement_title
@@ -580,11 +597,30 @@ async def generate_cost_analysis_for_submission(
             slide_tables=slide_tables,
         )
         cost_dict = cost_res.model_dump()
-        await conn.execute(
-            "update submissions set cost_analysis = $2 where id = $1",
-            submission_id,
-            cost_dict,
-        )
+        is_already_scored = sub["status"] == "scored"
+        if is_already_scored:
+            await conn.execute(
+                "update submissions set cost_analysis = $2, is_stale = true where id = $1",
+                submission_id,
+                cost_dict,
+            )
+            invalidate_for_submission(submission_id)
+            active_job = await conn.fetchval(
+                "select 1 from jobs where submission_id = $1 and job_type = 'stage2_deep_analysis' and status in ('queued', 'running')",
+                submission_id,
+            )
+            if not active_job:
+                await conn.execute(
+                    "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
+                    submission_id,
+                )
+        else:
+            await conn.execute(
+                "update submissions set cost_analysis = $2 where id = $1",
+                submission_id,
+                cost_dict,
+            )
+
         await conn.execute(
             "delete from consistency_flags where submission_id = $1 and flag_type = 'cost_omission'",
             submission_id,
@@ -598,6 +634,55 @@ async def generate_cost_analysis_for_submission(
                 submission_id,
                 f"Cost breakdown omitted {cost_res.missing_components_count} required components for the stated technical architecture.",
             )
+        row = await conn.fetchrow(
+            """
+            select s.*, t.name as team_name, ps.title as problem_statement_title
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join problem_statements ps on ps.id = s.problem_statement_id
+            where s.id = $1
+            """,
+            submission_id,
+        )
+        return Submission(**dict(row))
+
+
+@router.post("/{submission_id}/re-evaluate", response_model=Submission)
+async def reevaluate_submission(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Submission:
+    """Explicitly triggers re-evaluation for a submission, rebuilding derived results,
+    updating stale state, and queuing Stage 2 analysis idempotently."""
+    async with pool.acquire() as conn:
+        sub = await conn.fetchrow(
+            """
+            select s.*, t.name as team_name, ps.title as problem_statement_title
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join problem_statements ps on ps.id = s.problem_statement_id
+            where s.id = $1
+            """,
+            submission_id,
+        )
+        if sub is None:
+            raise HTTPException(status_code=404, detail="Submission not found")
+
+        await conn.execute(
+            "update submissions set is_stale = true where id = $1",
+            submission_id,
+        )
+        invalidate_for_submission(submission_id)
+
+        active_job = await conn.fetchval(
+            "select 1 from jobs where submission_id = $1 and job_type = 'stage2_deep_analysis' and status in ('queued', 'running')",
+            submission_id,
+        )
+        if not active_job:
+            await conn.execute(
+                "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
+                submission_id,
+            )
+
         row = await conn.fetchrow(
             """
             select s.*, t.name as team_name, ps.title as problem_statement_title
