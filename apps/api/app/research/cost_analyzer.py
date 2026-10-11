@@ -289,19 +289,29 @@ def _sanitize_cost_analysis(analysis: CostAnalysis) -> CostAnalysis:
     analysis.total_estimated_cost = round(sum(c.estimated_market_cost for c in filtered_components), 2)
     analysis.missing_components_count = sum(1 for c in filtered_components if not c.is_declared_by_team)
 
-    # Crucial consistency guard: never retain a cost-barrier verdict from cloud
-    # subscriptions that were subsequently removed from the physical BOM.
-    if original_component_count > 0 and not filtered_components:
+    # Crucial consistency guard: without any itemized physical BOM, the result cannot
+    # support a positive cost-barrier claim. This covers both all-filtered and empty model outputs.
+    if not filtered_components:
         analysis.total_declared_cost = None
         analysis.cost_difference = None
         analysis.missing_components_count = 0
         analysis.affordability_verdict = "not_applicable"
         analysis.affordability_score_recommendation = 0.0
+        if original_component_count:
+            explanation = (
+                "No physical chemicals, equipment, or environmental-compliance components remain after "
+                "excluding software/cloud services. "
+            )
+        else:
+            explanation = (
+                "The analyzer did not return any itemized physical chemicals, equipment, or "
+                "environmental-compliance components. The BOM result is incomplete until this is checked. "
+            )
         analysis.affordability_analysis = (
-            "No physical chemicals, equipment, or environmental-compliance components remain after "
-            "excluding software/cloud services. This physical BOM assessment is not applicable; it "
-            "does not mean the software solution is free. Evaluate hosting, compute, data licensing, "
-            "and operations separately if they are in scope."
+            explanation
+            + "The physical BOM assessment is not applicable in its current state; this does not prove "
+            "that implementation is free or affordable. Verify required items and obtain realistic costs. "
+            "Evaluate hosting, compute, data licensing, and operations separately when they are in scope."
         )
     elif analysis.total_declared_cost is not None:
         analysis.cost_difference = round(analysis.total_estimated_cost - analysis.total_declared_cost, 2)
