@@ -206,9 +206,17 @@ export default function Upload() {
   return (
     <main className="flex flex-col items-center bg-gradient-to-br from-indigo-50 via-white to-slate-100 px-4 py-12">
       <div className="w-full max-w-[640px]">
-        <h1 className="mb-6 text-center text-2xl font-semibold text-slate-900">
-          Submit your hackathon entry
-        </h1>
+        <div className="mb-6 text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200 mb-2">
+            🌱 Environmental & Chemical Engineering Hackathon
+          </span>
+          <h1 className="text-2xl font-bold text-slate-900">
+            Submit your pitch deck
+          </h1>
+          <p className="mt-1 text-xs text-slate-500">
+            AI-powered evaluation of sustainable processes, materials, recycling, and chemical solutions
+          </p>
+        </div>
 
         <div className="rounded-2xl bg-white p-8 shadow-xl shadow-slate-200/60">
           <ProgressSteps step={step} />

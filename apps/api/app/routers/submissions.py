@@ -539,6 +539,75 @@ async def generate_benchmark_for_submission(
         return Submission(**dict(row))
 
 
+@router.post("/{submission_id}/cost-analysis", response_model=Submission)
+async def generate_cost_analysis_for_submission(
+    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Submission:
+    """Explicitly triggers or refreshes the required components & cost affordability analysis
+    (Bill of Materials, missing components calculation, market benchmark rates) for a submission."""
+    async with pool.acquire() as conn:
+        sub = await conn.fetchrow(
+            """
+            select s.*, t.name as team_name, ps.title as ps_title, ps.reference_text as ps_reference_text
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join problem_statements ps on ps.id = s.problem_statement_id
+            where s.id = $1
+            """,
+            submission_id,
+        )
+        if sub is None:
+            raise HTTPException(status_code=404, detail="Submission not found")
+
+        slides = await conn.fetch(
+            "select slide_number, raw_text, tables from slides where submission_id = $1 order by slide_number",
+            submission_id,
+        )
+        from app.research.cost_analyzer import generate_cost_analysis
+        deck_text = "\n".join(f"[Slide {s['slide_number']}] {s['raw_text'] or ''}" for s in slides)
+        slide_tables = [t for s in slides for t in (s["tables"] or []) if t]
+        context = SubmissionContext(**(sub["submission_context"] or {
+            "problem_domain": sub["ps_title"] or "Engineering Solution",
+            "target_beneficiary": "Target Users",
+            "required_deliverables": [],
+            "track_constraints": [],
+            "is_generic": False,
+        }))
+        cost_res = await generate_cost_analysis(
+            context=context,
+            problem_statement_text=sub["ps_reference_text"] or sub["ps_title"] or "",
+            deck_text=deck_text,
+            slide_tables=slide_tables,
+        )
+        cost_dict = cost_res.model_dump()
+        await conn.execute(
+            "update submissions set cost_analysis = $2 where id = $1",
+            submission_id,
+            cost_dict,
+        )
+        if cost_res.missing_components_count >= 2:
+            await conn.execute(
+                """
+                insert into consistency_flags (submission_id, flag_type, severity, description)
+                values ($1, 'cost_omission', 'medium', $2)
+                on conflict do nothing
+                """,
+                submission_id,
+                f"Cost breakdown omitted {cost_res.missing_components_count} required components for the stated technical architecture.",
+            )
+        row = await conn.fetchrow(
+            """
+            select s.*, t.name as team_name, ps.title as problem_statement_title
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join problem_statements ps on ps.id = s.problem_statement_id
+            where s.id = $1
+            """,
+            submission_id,
+        )
+        return Submission(**dict(row))
+
+
 @router.delete("/{submission_id}")
 async def delete_submission(
     submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)

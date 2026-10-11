@@ -78,6 +78,37 @@ export interface AcademicBenchmark {
   limitations_and_tradeoffs: string[];
 }
 
+export interface ProjectComponent {
+  name: string;
+  category:
+    | "chemicals_reagents"
+    | "equipment_hardware"
+    | "sensors_instrumentation"
+    | "utilities_energy"
+    | "waste_disposal_compliance"
+    | "software_cloud"
+    | "other";
+  is_declared_by_team: boolean;
+  declared_cost: number | null;
+  estimated_market_cost: number;
+  currency: string;
+  source_name: string;
+  source_url: string;
+  notes: string;
+}
+
+export interface CostAnalysis {
+  currency: string;
+  total_declared_cost: number | null;
+  total_estimated_cost: number;
+  cost_difference: number | null;
+  missing_components_count: number;
+  affordability_verdict: "highly_affordable" | "moderate_realistic" | "underestimated_missing_components" | "expensive_high_barrier";
+  affordability_score_recommendation: number;
+  affordability_analysis: string;
+  components: ProjectComponent[];
+}
+
 export interface Submission {
   id: string;
   team_id: string;
@@ -97,6 +128,7 @@ export interface Submission {
   problem_statement_title?: string | null;
   preliminary_score?: number | null;
   academic_benchmark?: AcademicBenchmark | null;
+  cost_analysis?: CostAnalysis | null;
 }
 
 export interface Slide {

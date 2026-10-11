@@ -21,7 +21,17 @@ logger = logging.getLogger("hackeval.extraction.slide_roles")
 GROQ_MODEL = "openai/gpt-oss-20b"
 
 KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
-    SlideRole.problem: ("problem", "challenge", "pain point", "the ask"),
+    SlideRole.problem: (
+        "problem",
+        "challenge",
+        "pain point",
+        "the ask",
+        "pollution",
+        "emission",
+        "waste issue",
+        "environmental challenge",
+        "contamination",
+    ),
     SlideRole.existing_solution: (
         "existing solution",
         "current solution",
@@ -29,6 +39,8 @@ KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
         "competitor",
         "alternative",
         "prior art",
+        "conventional method",
+        "standard practice",
     ),
     SlideRole.proposed_solution: (
         "proposed solution",
@@ -36,6 +48,10 @@ KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
         "solution overview",
         "our approach",
         "what we built",
+        "green chemistry",
+        "bioremediation",
+        "novel process",
+        "sustainable solution",
     ),
     SlideRole.workflow: (
         "workflow",
@@ -44,10 +60,46 @@ KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
         "system design",
         "pipeline",
         "tech stack",
+        "process flow",
+        "reaction mechanism",
+        "experimental setup",
+        "methodology",
+        "process optimization",
+        "flowsheet",
+        "compounding process",
     ),
-    SlideRole.cost: ("cost", "pricing", "budget", "roi"),
-    SlideRole.execution: ("execution", "implementation", "go-to-market", "gtm", "team"),
-    SlideRole.timeline: ("timeline", "roadmap", "milestones", "schedule"),
+    SlideRole.cost: (
+        "cost",
+        "pricing",
+        "budget",
+        "roi",
+        "bill of materials",
+        "bom",
+        "reagents cost",
+        "equipment cost",
+        "capex",
+        "opex",
+        "economic viability",
+    ),
+    SlideRole.execution: (
+        "execution",
+        "implementation",
+        "go-to-market",
+        "gtm",
+        "team",
+        "pilot plant",
+        "scale-up",
+        "field testing",
+        "industrial deployment",
+    ),
+    SlideRole.timeline: (
+        "timeline",
+        "roadmap",
+        "milestones",
+        "schedule",
+        "work plan",
+        "testing phases",
+    ),
 }
 
 

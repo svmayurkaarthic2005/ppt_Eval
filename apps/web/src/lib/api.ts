@@ -260,3 +260,11 @@ export async function generateAcademicBenchmark(submissionId: string): Promise<S
   return parseOrThrow(response);
 }
 
+export async function generateCostAnalysis(submissionId: string): Promise<Submission> {
+  const response = await fetch(`${API_URL}/submissions/${submissionId}/cost-analysis`, {
+    method: "POST",
+  });
+  return parseOrThrow(response);
+}
+
+

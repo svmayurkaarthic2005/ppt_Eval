@@ -203,7 +203,7 @@ async def fetch_academic_literature(domain: str, problem_text: str, deck_sample:
     stop_words = {"need", "early", "reliable", "rarely", "available", "classical", "their", "about", "using", "with", "from", "that", "this"}
     raw_words = re.findall(r"\b[A-Za-z]{4,}\b", query)
     filtered = [w for w in raw_words if w.lower() not in stop_words]
-    search_term = " ".join(filtered[:5]) or "crop stress machine learning"
+    search_term = " ".join(filtered[:5]) or "environmental chemical engineering recycling waste"
 
     s2_task = fetch_semantic_scholar_papers(search_term, max_results=4)
     ieee_task = fetch_crossref_ieee_papers(search_term, max_results=4)
@@ -232,25 +232,25 @@ _SYNTHESIS_JSON_SCHEMA = {
     "properties": {
         "existing_solutions_summary": {
             "type": "string",
-            "description": "Summary of current state-of-the-art and classical baselines published in IEEE/arXiv/Google Scholar.",
+            "description": "Summary of current state-of-the-art and conventional chemical/environmental baselines published in IEEE/arXiv/Google Scholar.",
         },
         "gaps_in_existing_solutions": {
             "type": "string",
-            "description": "Critical limitations in existing systems identified by research (e.g. data scarcity, compute, latency).",
+            "description": "Critical limitations in existing chemical or environmental systems (e.g. thermal degradation, energy consumption, toxic emissions, secondary waste).",
         },
         "why_ranked_explanation": {
             "type": "string",
-            "description": "Detailed explanation of why this team's submission was evaluated and ranked, synthesizing rubric criteria.",
+            "description": "Detailed explanation of why this team's submission was evaluated and ranked, synthesizing chemical engineering and environmental rubric criteria.",
         },
         "better_than_existing_aspects": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "3-5 specific bullet points explaining how the proposed solution outperforms or innovates over existing systems.",
+            "description": "3-5 specific bullet points explaining how the proposed chemical/environmental solution outperforms conventional baselines.",
         },
         "limitations_and_tradeoffs": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "2-3 honest technical trade-offs or constraints acknowledged in the proposal.",
+            "description": "2-3 honest chemical or environmental engineering trade-offs (e.g. reaction kinetics, feed purity requirements, scale-up constraints).",
         },
     },
     "required": [
@@ -271,13 +271,13 @@ async def generate_academic_benchmark(
     papers: list[ScholarlyPaper],
 ) -> AcademicBenchmark:
     """Uses LLM to synthesize how the proposed solution compares to existing systems
-    and why it ranked where it did, grounded in real IEEE and arXiv research."""
+    and why it ranked where it did, grounded in real IEEE, Semantic Scholar, and arXiv research."""
     papers_context = "\n".join(
         f"- [{p.source}] \"{p.title}\" ({p.year}, {p.venue}): {p.summary}"
         for p in papers
     )
 
-    prompt = f"""You are an elite academic peer reviewer and AI judge. Analyze the hackathon submission below against published state-of-the-art research (from Semantic Scholar, IEEE, Google Scholar, and arXiv).
+    prompt = f"""You are an elite academic peer reviewer and judge specializing in Environmental Engineering, Chemical Engineering, Polymer Science, and Industrial Waste Valorization. Analyze the hackathon submission below against published state-of-the-art research (from Semantic Scholar, IEEE, Google Scholar, and arXiv).
 
 Problem Domain: {context.problem_domain}
 Target Beneficiary: {context.target_beneficiary}
@@ -286,20 +286,20 @@ Stated Problem: {problem_statement_text[:300]}
 Team's Proposal / Deck Content:
 {deck_text[:2500]}
 
-Published Academic Literature & Existing Baselines Found (Semantic Scholar, IEEE, arXiv):
+Published Academic Literature & Existing Baselines Found:
 {papers_context}
 
-Produce a rigorous scientific evaluation comparing the team's system against existing solutions:
+Produce a rigorous scientific evaluation comparing the team's system against existing chemical and environmental solutions:
 
-1. existing_solutions_summary: What existing classical or current SOTA methods exist in the literature (e.g., standard CNNs, ResNet baselines, manual scouting).
-2. gaps_in_existing_solutions: What specific drawbacks do published papers and practitioners encounter with those existing methods.
-3. why_ranked_explanation: A comprehensive explanation of why this submission was scored and ranked, evaluating its technical rigor, feasibility, and alignment with the problem.
-4. better_than_existing_aspects: Concrete points where the proposed solution improves upon or differentiates from existing systems (e.g. sample efficiency, hybrid architecture, domain fit).
-5. limitations_and_tradeoffs: Practical constraints or areas for future validation (e.g. quantum simulator overhead, dataset diversity, deployment hurdles).
+1. existing_solutions_summary: What existing chemical, biological, or mechanical treatment/process engineering methods exist in the literature (e.g., conventional incineration, manual sorting, chemical leaching, standard mechanical recycling, thermal pyrolysis).
+2. gaps_in_existing_solutions: What specific drawbacks do published papers and industrial practitioners encounter (e.g., high thermal degradation, secondary microplastic/toxic emissions, high energy intensity, loss of mechanical impact strength).
+3. why_ranked_explanation: A comprehensive explanation of why this submission was scored and ranked, evaluating its chemical engineering viability, material efficiency, environmental net footprint, and scalability.
+4. better_than_existing_aspects: Concrete points where the proposed solution improves upon or differentiates from existing systems (e.g., green chemistry principles, higher material recovery yield, lower carbon/energy intensity, closed-loop recyclability).
+5. limitations_and_tradeoffs: Practical engineering constraints or areas for industrial validation (e.g., feedstock contamination tolerance, pilot-scale heat transfer, continuous operation limits).
 """
 
     messages = [
-        {"role": "system", "content": "You are a scientific AI judge analyzing technology novelty against literature."},
+        {"role": "system", "content": "You are a scientific AI judge analyzing chemical and environmental engineering technology novelty against literature."},
         {"role": "user", "content": prompt},
     ]
 
@@ -336,25 +336,26 @@ Produce a rigorous scientific evaluation comparing the team's system against exi
         return AcademicBenchmark(
             papers=papers,
             existing_solutions_summary=(
-                "Existing solutions in IEEE and Google Scholar primarily employ classical deep learning "
-                "(ResNet, MobileNet, YOLO) trained on benchmarks like PlantVillage. While accurate on large "
-                "curated datasets, these systems require extensive annotated training data."
+                "Existing solutions in IEEE and Google Scholar primarily rely on conventional mechanical recycling, "
+                "thermal incineration, or basic chemical dissolution. While established at scale, these processes suffer "
+                "from polymer chain degradation, high energy consumption, and secondary volatile emissions."
             ),
             gaps_in_existing_solutions=(
-                "Published literature documents severe degradation when classical models are applied to niche crops "
-                "or under-represented regional conditions with few labeled samples, along with high computational cost."
+                "Published literature documents significant drop in tensile and impact strength after repeated compounding cycles, "
+                "inability to handle complex polymer blends without compatibilizers, and severe operational downtime during color transitions."
             ),
             why_ranked_explanation=(
-                "Ranked based on strong problem-solution fit, concrete architectural articulation (hybrid classical-quantum pipeline), "
-                "and realistic awareness of existing classical baselines. Evaluated across rubric dimensions for technical feasibility and differentiation."
+                "Ranked based on strong environmental and chemical engineering problem-solution fit, "
+                "sound understanding of material balances, and realistic process optimization. Evaluated across rubric dimensions "
+                "for environmental sustainability, chemical feasibility, and economic viability."
             ),
             better_than_existing_aspects=[
-                "Addresses data scarcity in niche crops using quantum kernel feature maps designed for high-dimensional expressivity from fewer samples.",
-                "Hybrid pipeline decouples feature extraction (classical CNN) from kernel evaluation, preserving real-time inference.",
-                "Explicitly benchmarks against classical baseline models across multiple data regimes.",
+                "Minimizes material degradation and maximizes polymer mechanical recovery compared to standard mechanical recycling.",
+                "Reduces downtime, purging waste, and energy consumption through targeted process control.",
+                "Aligns with circular economy principles by enabling closed-loop material recycling.",
             ],
             limitations_and_tradeoffs=[
-                "Current implementation relies on quantum state simulators pending NISQ fault-tolerant hardware availability.",
-                "Requires careful noise mitigation when executing on physical superconducting QPUs.",
+                "Requires rigorous quality control over input plastic/feedstock purity and moisture content.",
+                "Needs pilot-scale continuous extrusion validation before full factory floor deployment.",
             ],
         )

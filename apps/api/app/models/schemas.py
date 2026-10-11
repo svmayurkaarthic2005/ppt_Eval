@@ -101,8 +101,9 @@ class Submission(BaseModel):
     problem_statement_title: str | None = None
     preliminary_score: float | None = None
     academic_benchmark: dict[str, Any] | None = None
+    cost_analysis: dict[str, Any] | None = None
 
-    @field_validator("academic_benchmark", "submission_context", mode="before")
+    @field_validator("academic_benchmark", "submission_context", "cost_analysis", mode="before")
     @classmethod
     def _parse_json_if_string(cls, v: Any) -> Any:
         if isinstance(v, str):

@@ -1,6 +1,8 @@
 import type {
   AcademicBenchmark,
+  CostAnalysis,
   CriterionEvidenceView,
+  ProjectComponent,
   SlideView,
   Submission,
   SubmissionAudit,
@@ -14,6 +16,7 @@ import {
   ApiError,
   deleteTeam,
   generateAcademicBenchmark,
+  generateCostAnalysis,
   getSubmission,
   getSubmissionAudit,
   getSubmissionEvidence,
@@ -465,6 +468,371 @@ function AcademicBenchmarkSection({
   );
 }
 
+function CostAffordabilitySection({
+  costAnalysis,
+  submissionId,
+  onRefresh,
+}: {
+  costAnalysis?: CostAnalysis | null;
+  submissionId: string;
+  onRefresh: (s: Submission) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAnalyze() {
+    setLoading(true);
+    setError(null);
+    try {
+      const updated = await generateCostAnalysis(submissionId);
+      onRefresh(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run cost analysis");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const verdictConfig = {
+    highly_affordable: {
+      label: "Highly Affordable & Feasible",
+      color: "bg-emerald-100 text-emerald-800 border-emerald-300",
+      dot: "bg-emerald-500",
+    },
+    moderate_realistic: {
+      label: "Realistic & Well-Budgeted",
+      color: "bg-blue-100 text-blue-800 border-blue-300",
+      dot: "bg-blue-500",
+    },
+    underestimated_missing_components: {
+      label: "Underestimated / Missing Components",
+      color: "bg-amber-100 text-amber-800 border-amber-300",
+      dot: "bg-amber-500",
+    },
+    expensive_high_barrier: {
+      label: "High Cost Barrier for Beneficiaries",
+      color: "bg-rose-100 text-rose-800 border-rose-300",
+      dot: "bg-rose-500",
+    },
+  }[costAnalysis?.affordability_verdict ?? "moderate_realistic"] ?? {
+    label: "Cost Evaluated",
+    color: "bg-slate-100 text-slate-800 border-slate-300",
+    dot: "bg-slate-500",
+  };
+
+  const curr = costAnalysis?.currency === "INR" ? "₹" : (costAnalysis?.currency ?? "$");
+
+  const categoryMap: Record<string, { label: string; badge: string }> = {
+    chemicals_reagents: { label: "Chemicals & Reagents", badge: "bg-purple-100 text-purple-800" },
+    equipment_hardware: { label: "Process Equipment", badge: "bg-blue-100 text-blue-800" },
+    sensors_instrumentation: { label: "Sensors & In-line Analytics", badge: "bg-cyan-100 text-cyan-800" },
+    utilities_energy: { label: "Utilities & Energy", badge: "bg-amber-100 text-amber-800" },
+    waste_disposal_compliance: { label: "Waste Treatment & Safety", badge: "bg-emerald-100 text-emerald-800" },
+    software_cloud: { label: "Control & Software", badge: "bg-indigo-100 text-indigo-800" },
+    other: { label: "Other", badge: "bg-slate-100 text-slate-800" },
+  };
+
+  function VendorSourceBadge({
+    sourceName,
+    sourceUrl,
+  }: {
+    sourceName?: string;
+    sourceUrl?: string;
+  }) {
+    const name = (sourceName || "").trim();
+    const lower = name.toLowerCase();
+
+    let badgeStyle = "bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200";
+    let brandIcon = (
+      <svg className="h-3 w-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+      </svg>
+    );
+
+    if (lower.includes("amazon")) {
+      badgeStyle = "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 hover:border-amber-300";
+      brandIcon = (
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-black text-white">
+          a
+        </span>
+      );
+    } else if (lower.includes("flipkart")) {
+      badgeStyle = "bg-blue-50 text-blue-900 border-blue-200 hover:bg-blue-100 hover:border-blue-300";
+      brandIcon = (
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-600 text-[9px] font-black text-yellow-300">
+          F
+        </span>
+      );
+    } else if (lower.includes("indiamart") || lower.includes("india mart")) {
+      badgeStyle = "bg-teal-50 text-teal-900 border-teal-200 hover:bg-teal-100 hover:border-teal-300";
+      brandIcon = (
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-teal-600 text-[9px] font-black text-white">
+          M
+        </span>
+      );
+    } else if (lower.includes("sigma") || lower.includes("merck") || lower.includes("aldrich")) {
+      badgeStyle = "bg-purple-50 text-purple-900 border-purple-200 hover:bg-purple-100 hover:border-purple-300";
+      brandIcon = (
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-purple-600 text-[9px] font-black text-white">
+          Σ
+        </span>
+      );
+    } else if (lower.includes("robu")) {
+      badgeStyle = "bg-rose-50 text-rose-900 border-rose-200 hover:bg-rose-100 hover:border-rose-300";
+      brandIcon = (
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-600 text-[9px] font-black text-white">
+          R
+        </span>
+      );
+    } else if (lower.includes("moglix")) {
+      badgeStyle = "bg-red-50 text-red-900 border-red-200 hover:bg-red-100 hover:border-red-300";
+      brandIcon = (
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-red-600 text-[9px] font-black text-white">
+          m
+        </span>
+      );
+    }
+
+    if (!sourceUrl) {
+      return (
+        <span className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold border ${badgeStyle}`}>
+          {brandIcon}
+          <span>{name || "Market Benchmark"}</span>
+        </span>
+      );
+    }
+
+    return (
+      <a
+        href={sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`Verify price on ${name || "Source Platform"}`}
+        className={`group inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold border shadow-xs transition-all ${badgeStyle}`}
+      >
+        {brandIcon}
+        <span className="underline decoration-dotted underline-offset-2">{name || "Live Catalog"}</span>
+        <svg
+          className="h-3 w-3 opacity-70 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2.5}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+      </a>
+    );
+  }
+
+  return (
+    <section className="stitch-card overflow-hidden rounded-2xl border-emerald-200/90 bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/25 p-5 sm:p-6 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-emerald-100 pb-4">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-0.5 text-xs font-bold text-emerald-800">
+              Bill of Materials (BOM) &middot; Chemicals & Equipment
+            </span>
+            <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-semibold text-teal-800">
+              Process Economics & CAPEX/OPEX
+            </span>
+          </div>
+          <h2 className="mt-2 text-xl font-extrabold text-slate-900 tracking-tight">
+            Process Components & Cost Affordability Analysis
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-600">
+            Calculates required chemicals, reagents, process equipment, utilities & environmental compliance items to verify realistic industrial affordability.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleAnalyze}
+          disabled={loading}
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02] hover:shadow-emerald-600/35 disabled:opacity-50"
+        >
+          {loading ? (
+            <>
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" />
+                <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+              </svg>
+              Calculating Components & Pricing...
+            </>
+          ) : (
+            <>
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {costAnalysis ? "Re-calculate Cost & BOM" : "Calculate Components & Costs"}
+            </>
+          )}
+        </button>
+      </div>
+
+      {error && (
+        <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs font-medium text-red-700 border border-red-200">{error}</p>
+      )}
+
+      {!costAnalysis ? (
+        <div className="mt-5 flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200 bg-white/70 p-8 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 shadow-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-6 w-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z" />
+            </svg>
+          </div>
+          <h3 className="mt-3 text-base font-bold text-slate-800">Component & Cost Analysis Ready</h3>
+          <p className="mt-1 max-w-md text-xs text-slate-500">
+            Click above to extract required technical components from the pitch deck and benchmark realistic market costs.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-5 space-y-4">
+          {/* KPI Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="stitch-card rounded-xl p-3.5 bg-white shadow-sm border border-slate-100">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Declared in Deck</span>
+              <p className="mt-1 text-base sm:text-lg font-black text-slate-900">
+                {costAnalysis.total_declared_cost !== null && costAnalysis.total_declared_cost !== undefined
+                  ? `${curr} ${costAnalysis.total_declared_cost.toLocaleString()}`
+                  : "None Stated"}
+              </p>
+              <span className="text-[10px] text-slate-500">By team in pitch slides</span>
+            </div>
+
+            <div className="stitch-card rounded-xl p-3.5 bg-white shadow-sm border border-slate-100">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Realistic Market Est.</span>
+              <p className="mt-1 text-base sm:text-lg font-black text-emerald-700">
+                {curr} {costAnalysis.total_estimated_cost.toLocaleString()}
+              </p>
+              <span className="text-[10px] text-emerald-600 font-medium">All required items</span>
+            </div>
+
+            <div className="stitch-card rounded-xl p-3.5 bg-white shadow-sm border border-slate-100">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Missing Components</span>
+              <p className={`mt-1 text-base sm:text-lg font-black ${costAnalysis.missing_components_count > 0 ? "text-amber-600" : "text-emerald-700"}`}>
+                {costAnalysis.missing_components_count} {costAnalysis.missing_components_count === 1 ? "item" : "items"}
+              </p>
+              <span className="text-[10px] text-slate-500">Omitted from declared budget</span>
+            </div>
+
+            <div className="stitch-card rounded-xl p-3.5 bg-white shadow-sm border border-slate-100">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Affordability Score</span>
+              <p className="mt-1 text-base sm:text-lg font-black text-slate-900">
+                {costAnalysis.affordability_score_recommendation.toFixed(2)} / 2.0
+              </p>
+              <span className="text-[10px] text-slate-500">Rubric recommendation</span>
+            </div>
+          </div>
+
+          {/* Verdict Banner */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-4 bg-white shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black ${verdictConfig.color}`}>
+                <span className={`h-2 w-2 rounded-full ${verdictConfig.dot}`} />
+                {verdictConfig.label}
+              </span>
+              <span className="text-xs text-slate-500">
+                {costAnalysis.components.length} total architecture components evaluated
+              </span>
+            </div>
+            {costAnalysis.cost_difference !== null && costAnalysis.cost_difference !== undefined && (
+              <span className="text-xs font-semibold text-slate-600">
+                Variance: <span className={costAnalysis.cost_difference > 0 ? "text-amber-700 font-bold" : "text-emerald-700 font-bold"}>
+                  {costAnalysis.cost_difference > 0 ? `+${curr} ${costAnalysis.cost_difference.toLocaleString()} shortfall` : "Within budget"}
+                </span>
+              </span>
+            )}
+          </div>
+
+          {/* Narrative Analysis */}
+          <div className="stitch-card rounded-2xl p-4 sm:p-5 bg-white shadow-sm border border-slate-100">
+            <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 mb-2">
+              Cost & Feasibility Assessment
+            </h4>
+            <p className="text-xs sm:text-sm text-slate-700 leading-relaxed bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-100/60 font-normal">
+              {costAnalysis.affordability_analysis}
+            </p>
+          </div>
+
+          {/* Itemized Components Table */}
+          {costAnalysis.components && costAnalysis.components.length > 0 && (
+            <div className="stitch-card rounded-2xl overflow-hidden bg-white shadow-sm border border-slate-100">
+              <div className="border-b border-slate-100 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                    Bill of Materials (BOM) & Component Cost Verification
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Itemized products and chemicals benchmarked against live commercial platforms (Amazon, Flipkart, IndiaMART, Sigma-Aldrich, Robu.in). Click any source link to verify live pricing.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800 border border-emerald-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live Platform Links Active
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                    <tr>
+                      <th className="py-2.5 px-4 min-w-[190px]">Product / Component Name</th>
+                      <th className="py-2.5 px-3">Category</th>
+                      <th className="py-2.5 px-3">Status in Deck</th>
+                      <th className="py-2.5 px-3 text-right">Declared</th>
+                      <th className="py-2.5 px-3 text-right">Market Est.</th>
+                      <th className="py-2.5 px-3 min-w-[145px]">Price Source & Verification Link</th>
+                      <th className="py-2.5 px-4 min-w-[200px]">Requirement Justification</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {costAnalysis.components.map((c, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-800">
+                          {c.name}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${categoryMap[c.category]?.badge ?? "bg-slate-100 text-slate-700"}`}>
+                            {categoryMap[c.category]?.label ?? c.category.replace(/_/g, " ")}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          {c.is_declared_by_team ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                              ✓ In Budget
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200">
+                              ⚠ Omitted
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right font-medium text-slate-600 tabular-nums">
+                          {c.declared_cost !== null && c.declared_cost !== undefined
+                            ? `${curr} ${c.declared_cost.toLocaleString()}`
+                            : "-"}
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-slate-900 tabular-nums">
+                          {curr} {c.estimated_market_cost.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-3">
+                          <VendorSourceBadge sourceName={c.source_name} sourceUrl={c.source_url} />
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">{c.notes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Team() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -713,6 +1081,14 @@ export default function Team() {
       {submission && (
         <AcademicBenchmarkSection
           benchmark={submission.academic_benchmark}
+          submissionId={submission.id}
+          onRefresh={(updated) => setSubmission(updated)}
+        />
+      )}
+
+      {submission && (
+        <CostAffordabilitySection
+          costAnalysis={submission.cost_analysis}
           submissionId={submission.id}
           onRefresh={(updated) => setSubmission(updated)}
         />
