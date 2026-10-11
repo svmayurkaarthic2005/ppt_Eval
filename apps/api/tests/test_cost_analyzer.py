@@ -112,3 +112,76 @@ async def test_generate_cost_analysis_fallback_mode():
     for c in result.components:
         assert c.source_name
         assert c.source_url.startswith("https://") or c.source_url.startswith("http://")
+
+
+def test_excludes_subscriptions_and_cloud_services():
+    from app.research.cost_analyzer import (
+        ProjectComponent,
+        _is_subscription_or_cloud,
+        _sanitize_cost_analysis,
+    )
+
+    # Keywords detection
+    assert _is_subscription_or_cloud("AWS EC2 Cloud Hosting", "other", "monthly server cost")
+    assert _is_subscription_or_cloud("Kaggle GPU Pro Subscription", "other", "for ML model training")
+    assert _is_subscription_or_cloud("Ksggle Cloud", "other", "gpu plan")
+    assert _is_subscription_or_cloud("Claude 3.5 Sonnet API Credits", "other", "AI API token usage")
+    assert _is_subscription_or_cloud("OpenAI ChatGPT Plus Subscription", "other", "prompt generation")
+    assert _is_subscription_or_cloud("Azure Blob Storage", "other", "data storage")
+    assert _is_subscription_or_cloud("Monthly SaaS Subscription Plan", "other", "software license")
+    assert not _is_subscription_or_cloud("Lab Twin-Screw Extruder 20mm", "equipment_hardware", "pilot compounding unit")
+    assert not _is_subscription_or_cloud("Core-Shell Rubber MBS Impact Modifier", "chemicals_reagents", "chemical additive")
+
+    # Sanitizer filtering
+    dummy_analysis = CostAnalysis(
+        currency="INR",
+        total_declared_cost=10000.0,
+        total_estimated_cost=20000.0,
+        cost_difference=10000.0,
+        missing_components_count=2,
+        affordability_verdict="moderate_realistic",
+        affordability_score_recommendation=1.5,
+        affordability_analysis="Test analysis",
+        components=[
+            ProjectComponent(
+                name="Twin-Screw Extruder 20mm Barrel",
+                category="equipment_hardware",
+                is_declared_by_team=True,
+                declared_cost=15000.0,
+                estimated_market_cost=18000.0,
+                currency="INR",
+                source_name="IndiaMART",
+                source_url="https://dir.indiamart.com/search.mp?ss=extruder",
+                notes="Pilot processing machinery",
+            ),
+            ProjectComponent(
+                name="AWS Cloud Compute Subscription",
+                category="other",
+                is_declared_by_team=True,
+                declared_cost=2000.0,
+                estimated_market_cost=2500.0,
+                currency="INR",
+                source_name="Amazon",
+                source_url="",
+                notes="Cloud server monthly subscription",
+            ),
+            ProjectComponent(
+                name="Claude Sonnet API Subscription",
+                category="other",
+                is_declared_by_team=False,
+                declared_cost=None,
+                estimated_market_cost=3000.0,
+                currency="INR",
+                source_name="Anthropic",
+                source_url="",
+                notes="Claude LLM monthly credits",
+            ),
+        ],
+    )
+
+    sanitized = _sanitize_cost_analysis(dummy_analysis)
+    component_names = [c.name for c in sanitized.components]
+    assert "Twin-Screw Extruder 20mm Barrel" in component_names
+    assert "AWS Cloud Compute Subscription" not in component_names
+    assert "Claude Sonnet API Subscription" not in component_names
+    assert sanitized.total_estimated_cost == 18000.0
