@@ -266,3 +266,24 @@ def test_sanitizer_does_not_keep_high_cost_verdict_when_all_items_are_filtered()
     assert sanitized.affordability_score_recommendation == 0.0
     assert "does not mean" in sanitized.affordability_analysis
 
+def test_sanitizer_marks_empty_model_bom_not_applicable():
+    analysis = CostAnalysis(
+        currency="INR",
+        total_declared_cost=0.0,
+        total_estimated_cost=0.0,
+        cost_difference=0.0,
+        missing_components_count=0,
+        affordability_verdict="expensive_high_barrier",
+        affordability_score_recommendation=0.2,
+        affordability_analysis="The project is expensive.",
+        components=[],
+    )
+
+    sanitized = _sanitize_cost_analysis(analysis)
+    assert sanitized.affordability_verdict == "not_applicable"
+    assert sanitized.affordability_score_recommendation == 0.0
+    assert sanitized.total_declared_cost is None
+    assert sanitized.cost_difference is None
+    assert "did not return any itemized physical" in sanitized.affordability_analysis
+    assert "does not prove" in sanitized.affordability_analysis
+
