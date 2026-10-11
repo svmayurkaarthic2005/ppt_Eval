@@ -313,7 +313,7 @@ async def generate_academic_benchmark(
         for p in papers
     )
 
-    prompt = f"""You are a research reviewer and hackathon judge with expertise appropriate to the submission's stated domain. Do not assume a fixed discipline or favor any particular technology category. Analyze the submission against relevant published research returned below. Keep claims tied to the paper summaries and the deck, and explicitly say when evidence is insufficient.
+    prompt = f"""You are a research reviewer and hackathon judge for an Environmental and Chemical Engineering-themed hackathon, with expertise appropriate to the submission's stated problem domain within that theme. The submission's implementation technology (physical process, software/AI, or hybrid) does not determine its merit -- its genuine relevance and contribution to an environmental or chemical engineering problem does. Analyze the submission against relevant published research returned below. Keep claims tied to the paper summaries and the deck, and explicitly say when evidence is insufficient.
 
 Problem Domain: {wrap_untrusted(context.problem_domain)}
 Target Beneficiary: {wrap_untrusted(context.target_beneficiary)}
@@ -335,7 +335,7 @@ Produce an evidence-grounded comparison that is relevant to the stated problem a
 """
 
     messages = [
-        {"role": "system", "content": "You are a domain-aware research judge. Compare submissions with relevant literature without assuming a fixed discipline or inventing evidence."},
+        {"role": "system", "content": "You are a research judge for an Environmental and Chemical Engineering-themed hackathon. Compare submissions with relevant literature on their actual contribution to that theme, without assuming a fixed implementation technology or inventing evidence."},
         {"role": "user", "content": prompt},
     ]
 

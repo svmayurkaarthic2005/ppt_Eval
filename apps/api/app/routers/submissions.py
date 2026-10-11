@@ -501,8 +501,8 @@ async def generate_benchmark_for_submission(
         from app.research.scholarly import fetch_academic_literature, generate_academic_benchmark
         deck_text = "\n".join(f"[Slide {s['slide_number']}] {s['raw_text'] or ''}" for s in slides)
         context = SubmissionContext(**(sub["submission_context"] or {
-            "problem_domain": sub["ps_title"] or "Artificial Intelligence",
-            "target_beneficiary": "Domain Practitioners & Researchers",
+            "problem_domain": sub["ps_title"] or "Environmental and Chemical Engineering",
+            "target_beneficiary": "Environmental and Chemical Engineering Practitioners",
             "required_deliverables": [],
             "track_constraints": [],
             "is_generic": False,
@@ -584,8 +584,8 @@ async def generate_cost_analysis_for_submission(
         deck_text = "\n".join(f"[Slide {s['slide_number']}] {s['raw_text'] or ''}" for s in slides)
         slide_tables = [t for s in slides for t in (s["tables"] or []) if t]
         context = SubmissionContext(**(sub["submission_context"] or {
-            "problem_domain": sub["ps_title"] or "Engineering Solution",
-            "target_beneficiary": "Target Users",
+            "problem_domain": sub["ps_title"] or "Environmental and Chemical Engineering",
+            "target_beneficiary": "Environmental and Chemical Engineering Practitioners",
             "required_deliverables": [],
             "track_constraints": [],
             "is_generic": False,
