@@ -400,7 +400,9 @@ async def run_stage2_deep_analysis(conn: asyncpg.Connection, submission_id: UUID
             cost_analysis = None
 
     cost_context = ""
-    if cost_analysis:
+    # A not-applicable physical BOM must not inject its placeholder 0.0 score
+    # into the separate rubric-based cost/affordability criterion.
+    if cost_analysis and cost_analysis.get("affordability_verdict") != "not_applicable":
         components_lines = [
             f"- {c['name']} ({c['category']}): Declared={c['declared_cost']} | Realistic Market Rate={c['currency']} {c['estimated_market_cost']} | Mentioned in deck: {'Yes' if c['is_declared_by_team'] else 'NO (OMITTED)'}"
             for c in cost_analysis.get("components", [])
