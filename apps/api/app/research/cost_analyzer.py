@@ -296,6 +296,51 @@ def _detect_currency(_text: str = "") -> str:
     return "INR"
 
 
+def _is_software_first_project(context: SubmissionContext, deck_text: str) -> bool:
+    """Identify software/AI projects so the physical-process BOM prompt is not misapplied."""
+    domain = (context.problem_domain or "").lower()
+    content = f"{domain} {deck_text[:12000]}".lower()
+    software_signals = (
+        "software", "web app", "mobile app", "saas", "machine learning",
+        "deep learning", "quantum machine learning", "qml", "artificial intelligence",
+        "crop stress detection", "computer vision", "natural language processing",
+        "digital platform", "cloud-based", "cloud based", "simulator", "simulation",
+        "data pipeline", "api-based", "api based",
+    )
+    physical_signals = (
+        "chemical reactor", "effluent treatment", "wastewater treatment plant",
+        "polymer recycling", "extruder", "shredder", "industrial scrubber",
+        "physical prototype", "pilot plant", "process vessel", "chemical reagent",
+        "manufacturing line", "fabrication of hardware",
+    )
+    software_hits = sum(1 for term in software_signals if term in content)
+    physical_hits = sum(1 for term in physical_signals if term in content)
+    return software_hits >= 2 and physical_hits == 0
+
+
+def _software_cost_analysis(deck_text: str) -> CostAnalysis:
+    """Return an explicitly incomplete assessment rather than inventing software prices."""
+    lowered = deck_text.lower()
+    return CostAnalysis(
+        currency="INR",
+        total_declared_cost=None,
+        total_estimated_cost=0.0,
+        cost_difference=None,
+        missing_components_count=0,
+        affordability_verdict="moderate_realistic",
+        affordability_score_recommendation=0.0,
+        affordability_analysis=(
+            "This is a software/AI-first solution, so a chemical-process BOM is not applicable. "
+            "No defensible rupee estimate can be computed from the deck alone because deployment "
+            "duration, compute tier, data licensing, usage volume, and operational scale are not "
+            "specified. The displayed ₹0 is a placeholder meaning 'not quantified', not evidence "
+            "that implementation is free or affordable. Confirm applicable cost items and obtain "
+            "current vendor prices before assigning a final affordability score."
+        ),
+        components=[],
+    )
+
+
 async def generate_cost_analysis(
     context: SubmissionContext,
     problem_statement_text: str,
@@ -307,6 +352,10 @@ async def generate_cost_analysis(
     declared costs against market benchmarks in Indian Rupees (INR ₹), and calculates true project cost and affordability."""
     settings = get_settings()
     detected_currency = "INR"
+
+    # A software-first project should not be evaluated by the physical BOM prompt.
+    if _is_software_first_project(context, deck_text):
+        return _software_cost_analysis(deck_text)
 
     if not settings.groq_api_key:
         logger.warning("GROQ_API_KEY missing; using rule-based cost estimation fallback.")
