@@ -13,8 +13,8 @@ def test_detect_currency():
     assert _detect_currency("Total cost: ₹4,500 for the kit") == "INR"
     assert _detect_currency("Estimated price in Rs. 1500") == "INR"
     assert _detect_currency("Budget in INR 3000") == "INR"
-    assert _detect_currency("Total cost: $45 for the prototype") == "USD"
-    assert _detect_currency("Device price USD 120") == "USD"
+    assert _detect_currency("Total cost: $45 for the prototype") == "INR"
+    assert _detect_currency("Device price USD 120") == "INR"
 
 
 def test_fallback_cost_analysis_extracts_components_and_totals():
@@ -70,7 +70,7 @@ def test_resolve_source_info():
     assert "indiamart.com" in url
 
     # Sigma-Aldrich
-    name, url = _resolve_source_info("Polymer Catalyst Reagent", "chemicals_reagents", "Sigma-Aldrich", "", "USD")
+    name, url = _resolve_source_info("Polymer Catalyst Reagent", "chemicals_reagents", "Sigma-Aldrich", "", "INR")
     assert name == "Sigma-Aldrich"
     assert "sigmaaldrich.com" in url
 

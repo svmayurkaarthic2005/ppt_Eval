@@ -585,12 +585,15 @@ async def generate_cost_analysis_for_submission(
             submission_id,
             cost_dict,
         )
+        await conn.execute(
+            "delete from consistency_flags where submission_id = $1 and flag_type = 'cost_omission'",
+            submission_id,
+        )
         if cost_res.missing_components_count >= 2:
             await conn.execute(
                 """
                 insert into consistency_flags (submission_id, flag_type, severity, description)
                 values ($1, 'cost_omission', 'medium', $2)
-                on conflict do nothing
                 """,
                 submission_id,
                 f"Cost breakdown omitted {cost_res.missing_components_count} required components for the stated technical architecture.",

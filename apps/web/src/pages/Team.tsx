@@ -244,17 +244,31 @@ function AcademicBenchmarkSection({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   async function handleAnalyze() {
     setLoading(true);
     setError(null);
     try {
       const updated = await generateAcademicBenchmark(submissionId);
-      onRefresh(updated);
+      if (mountedRef.current) {
+        onRefresh(updated);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to run benchmark");
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to run benchmark");
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -478,17 +492,31 @@ function CostAffordabilitySection({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   async function handleAnalyze() {
     setLoading(true);
     setError(null);
     try {
       const updated = await generateCostAnalysis(submissionId);
-      onRefresh(updated);
+      if (mountedRef.current) {
+        onRefresh(updated);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to run cost analysis");
+      if (mountedRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to run cost analysis");
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -519,7 +547,7 @@ function CostAffordabilitySection({
     dot: "bg-slate-500",
   };
 
-  const curr = costAnalysis?.currency === "INR" ? "₹" : (costAnalysis?.currency ?? "$");
+  const curr = "₹";
 
   const categoryMap: Record<string, { label: string; badge: string }> = {
     chemicals_reagents: { label: "Chemicals & Reagents", badge: "bg-purple-100 text-purple-800" },
@@ -849,6 +877,9 @@ export default function Team() {
 
   useEffect(() => {
     if (!id) return;
+    let active = true;
+    setError(null);
+
     Promise.all([
       getSubmission(id),
       getSubmissionEvidence(id),
@@ -856,38 +887,60 @@ export default function Team() {
       getSubmissionSlides(id),
     ])
       .then(([s, e, a, sl]) => {
+        if (!active) return;
         setSubmission(s);
         setEvidence(e);
         setAudit(a);
         setSlides(sl);
       })
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load submission."));
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof ApiError ? err.message : "Could not load submission.");
+      });
+
+    return () => {
+      active = false;
+    };
   }, [id]);
 
-  // Real-time-ish status: poll while the submission is still mid-pipeline.
+  // Real-time status: poll while the submission is still mid-pipeline.
   useEffect(() => {
     if (!id || !submission || TERMINAL_STATUSES.has(submission.status)) return;
+    let active = true;
+    const pollId = id;
+
     pollRef.current = setInterval(async () => {
-      const latest = await getSubmission(id).catch(() => null);
-      if (latest) setSubmission(latest);
+      const latest = await getSubmission(pollId).catch(() => null);
+      if (!active || !latest) return;
+      setSubmission(latest);
 
-      // Slide images land during the 'rendering' stage, well before the
-      // submission is fully scored -- refresh every tick, not just at the
-      // end, so the deck viewer doesn't sit on "no image rendered" longer
-      // than it has to.
-      const sl = await getSubmissionSlides(id).catch(() => null);
-      if (sl) setSlides(sl);
+      const sl = await getSubmissionSlides(pollId).catch(() => null);
+      if (active && sl) setSlides(sl);
 
-      if (latest && (latest.status === "scored" || TERMINAL_STATUSES.has(latest.status))) {
-        const [e, a] = await Promise.all([getSubmissionEvidence(id), getSubmissionAudit(id)]).catch(
-          () => [null, null],
-        );
-        if (e) setEvidence(e);
-        if (a) setAudit(a);
+      if (TERMINAL_STATUSES.has(latest.status)) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        const [e, a] = await Promise.all([
+          getSubmissionEvidence(pollId),
+          getSubmissionAudit(pollId),
+        ]).catch(() => [null, null]);
+        if (active && e) setEvidence(e);
+        if (active && a) setAudit(a);
       }
     }, 4000);
-    return () => clearInterval(pollRef.current);
-  }, [id, submission]);
+
+    return () => {
+      active = false;
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [id, submission?.status]);
+
+  async function handleSubmissionUpdated(updated: Submission) {
+    setSubmission(updated);
+    if (id) {
+      const updatedAudit = await getSubmissionAudit(id).catch(() => null);
+      if (updatedAudit) setAudit(updatedAudit);
+    }
+  }
 
   async function handleDeleteTeam() {
     if (!submission) return;
@@ -1081,7 +1134,7 @@ export default function Team() {
         <AcademicBenchmarkSection
           benchmark={submission.academic_benchmark}
           submissionId={submission.id}
-          onRefresh={(updated) => setSubmission(updated)}
+          onRefresh={handleSubmissionUpdated}
         />
       )}
 
@@ -1089,7 +1142,7 @@ export default function Team() {
         <CostAffordabilitySection
           costAnalysis={submission.cost_analysis}
           submissionId={submission.id}
-          onRefresh={(updated) => setSubmission(updated)}
+          onRefresh={handleSubmissionUpdated}
         />
       )}
 

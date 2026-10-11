@@ -194,14 +194,20 @@ export default function Upload() {
 
   useEffect(() => {
     if (!submission || submission.status === "scored" || submission.status === "failed") return;
+    let active = true;
+    const subId = submission.id;
     const interval = setInterval(async () => {
-      const latest = await getSubmission(submission.id).catch(() => null);
-      if (latest) setSubmission(latest);
-      const latestAudit = await getSubmissionAudit(submission.id).catch(() => null);
-      if (latestAudit) setAudit(latestAudit);
+      const latest = await getSubmission(subId).catch(() => null);
+      if (!active || !latest) return;
+      setSubmission(latest);
+      const latestAudit = await getSubmissionAudit(subId).catch(() => null);
+      if (active && latestAudit) setAudit(latestAudit);
     }, 3000);
-    return () => clearInterval(interval);
-  }, [submission]);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [submission?.id, submission?.status]);
 
   return (
     <main className="flex flex-col items-center bg-gradient-to-br from-indigo-50 via-white to-slate-100 px-4 py-12">

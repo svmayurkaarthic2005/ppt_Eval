@@ -381,13 +381,16 @@ async def run_stage2_deep_analysis(conn: asyncpg.Connection, submission_id: UUID
                 submission_id,
                 cost_analysis,
             )
+            await conn.execute(
+                "delete from consistency_flags where submission_id = $1 and flag_type = 'cost_omission'",
+                submission_id,
+            )
             if cost_analysis.get("missing_components_count", 0) >= 2:
                 missing_cnt = cost_analysis["missing_components_count"]
                 await conn.execute(
                     """
                     insert into consistency_flags (submission_id, flag_type, severity, description)
                     values ($1, 'cost_omission', 'medium', $2)
-                    on conflict do nothing
                     """,
                     submission_id,
                     f"Cost breakdown omitted {missing_cnt} required components for the stated technical architecture.",
