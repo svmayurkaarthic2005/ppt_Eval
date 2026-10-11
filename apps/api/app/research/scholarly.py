@@ -333,7 +333,7 @@ Produce an evidence-grounded comparison that is relevant to the stated problem a
             limitations_and_tradeoffs=parsed["limitations_and_tradeoffs"],
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Academic benchmark synthesis failed, using rule-based synthesis: %s", exc)
+        logger.warning("Academic benchmark synthesis failed; returning an explicit unavailable assessment: %s", exc)
         papers_note = (
             f"Retrieved {len(papers)} papers are listed for manual review, but automated synthesis failed."
             if papers
