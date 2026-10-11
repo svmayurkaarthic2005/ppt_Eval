@@ -520,7 +520,14 @@ function CostAffordabilitySection({
     }
   }
 
+  const isBomNotApplicable = costAnalysis?.affordability_verdict === "not_applicable";
+
   const verdictConfig = {
+    not_applicable: {
+      label: "Physical BOM Not Applicable",
+      color: "bg-slate-100 text-slate-700 border-slate-300",
+      dot: "bg-slate-500",
+    },
     highly_affordable: {
       label: "Highly Affordable & Feasible",
       color: "bg-emerald-100 text-emerald-800 border-emerald-300",
@@ -668,7 +675,7 @@ function CostAffordabilitySection({
             Process Components & Cost Affordability Analysis
           </h2>
           <p className="mt-0.5 text-xs text-slate-600">
-            Calculates required chemicals, reagents, process equipment, utilities & environmental compliance items to verify realistic industrial affordability.
+            For physical-process solutions, estimates required chemicals, equipment, utilities, and compliance costs. Software/AI-only solutions are marked not applicable here rather than given a misleading physical BOM cost.
           </p>
         </div>
 
@@ -728,17 +735,21 @@ function CostAffordabilitySection({
             </div>
 
             <div className="stitch-card rounded-xl p-3.5 bg-white shadow-sm border border-slate-100">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Realistic Market Est.</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                {isBomNotApplicable ? "Physical BOM Estimate" : "Realistic Market Est."}
+              </span>
               <p className="mt-1 text-base sm:text-lg font-black text-emerald-700">
-                {curr} {costAnalysis.total_estimated_cost.toLocaleString()}
+                {isBomNotApplicable ? "N/A" : `${curr} ${costAnalysis.total_estimated_cost.toLocaleString()}`}
               </p>
-              <span className="text-[10px] text-emerald-600 font-medium">All required items</span>
+              <span className="text-[10px] text-slate-500 font-medium">
+                {isBomNotApplicable ? "Software-only solution" : "All required physical items"}
+              </span>
             </div>
 
             <div className="stitch-card rounded-xl p-3.5 bg-white shadow-sm border border-slate-100">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Missing Components</span>
               <p className={`mt-1 text-base sm:text-lg font-black ${costAnalysis.missing_components_count > 0 ? "text-amber-600" : "text-emerald-700"}`}>
-                {costAnalysis.missing_components_count} {costAnalysis.missing_components_count === 1 ? "item" : "items"}
+                {isBomNotApplicable ? "N/A" : `${costAnalysis.missing_components_count} ${costAnalysis.missing_components_count === 1 ? "item" : "items"}`}
               </p>
               <span className="text-[10px] text-slate-500">Omitted from declared budget</span>
             </div>
@@ -746,7 +757,7 @@ function CostAffordabilitySection({
             <div className="stitch-card rounded-xl p-3.5 bg-white shadow-sm border border-slate-100">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Affordability Score</span>
               <p className="mt-1 text-base sm:text-lg font-black text-slate-900">
-                {costAnalysis.affordability_score_recommendation.toFixed(2)} / 2.0
+                {isBomNotApplicable ? "N/A" : `${costAnalysis.affordability_score_recommendation.toFixed(2)} / 2.0`}
               </p>
               <span className="text-[10px] text-slate-500">Rubric recommendation</span>
             </div>
@@ -760,10 +771,12 @@ function CostAffordabilitySection({
                 {verdictConfig.label}
               </span>
               <span className="text-xs text-slate-500">
-                {costAnalysis.components.length} total architecture components evaluated
+                {isBomNotApplicable
+                  ? "No physical BOM required for this software-first solution"
+                  : `${costAnalysis.components.length} total architecture components evaluated`}
               </span>
             </div>
-            {costAnalysis.cost_difference !== null && costAnalysis.cost_difference !== undefined && (
+            {!isBomNotApplicable && costAnalysis.cost_difference !== null && costAnalysis.cost_difference !== undefined && (
               <span className="text-xs font-semibold text-slate-600">
                 Variance: <span className={costAnalysis.cost_difference > 0 ? "text-amber-700 font-bold" : "text-emerald-700 font-bold"}>
                   {costAnalysis.cost_difference > 0 ? `+${curr} ${costAnalysis.cost_difference.toLocaleString()} shortfall` : "Within budget"}

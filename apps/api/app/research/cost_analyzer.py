@@ -42,7 +42,7 @@ class CostAnalysis(BaseModel):
     cost_difference: float | None = Field(default=None, description="Difference between estimated realistic cost and declared cost")
     missing_components_count: int = Field(description="Number of critical components required by the architecture that the team omitted")
     affordability_verdict: str = Field(
-        description="'highly_affordable', 'moderate_realistic', 'underestimated_missing_components', or 'expensive_high_barrier'"
+        description="'not_applicable', 'highly_affordable', 'moderate_realistic', 'underestimated_missing_components', or 'expensive_high_barrier'"
     )
     affordability_score_recommendation: float = Field(
         description="Recommended score on a 0.0 to 2.0 scale for the cost_affordability rubric criterion"
@@ -64,6 +64,7 @@ _COST_ANALYSIS_JSON_SCHEMA = {
         "affordability_verdict": {
             "type": "string",
             "enum": [
+                "not_applicable",
                 "highly_affordable",
                 "moderate_realistic",
                 "underestimated_missing_components",
@@ -269,11 +270,12 @@ def _sanitize_cost_analysis(analysis: CostAnalysis) -> CostAnalysis:
     """Post-processes all components to ensure robust, clickable, verified links,
     strictly INR currency, and filters out any subscription plans or cloud services (AWS, Kaggle, Claude, etc.)."""
     analysis.currency = "INR"
+    original_component_count = len(analysis.components)
     filtered_components: list[ProjectComponent] = []
 
     for c in analysis.components:
         if _is_subscription_or_cloud(c.name, c.category, c.notes):
-            logger.info("Excluding subscription/cloud component from BOM cost evaluation: %s", c.name)
+            logger.info("Excluding subscription/cloud component from physical BOM evaluation: %s", c.name)
             continue
         c.currency = "INR"
         resolved_name, resolved_url = _resolve_source_info(
@@ -286,7 +288,32 @@ def _sanitize_cost_analysis(analysis: CostAnalysis) -> CostAnalysis:
     analysis.components = filtered_components
     analysis.total_estimated_cost = round(sum(c.estimated_market_cost for c in filtered_components), 2)
     analysis.missing_components_count = sum(1 for c in filtered_components if not c.is_declared_by_team)
-    if analysis.total_declared_cost is not None:
+
+    # Crucial consistency guard: without any itemized physical BOM, the result cannot
+    # support a positive cost-barrier claim. This covers both all-filtered and empty model outputs.
+    if not filtered_components:
+        analysis.total_declared_cost = None
+        analysis.cost_difference = None
+        analysis.missing_components_count = 0
+        analysis.affordability_verdict = "not_applicable"
+        analysis.affordability_score_recommendation = 0.0
+        if original_component_count:
+            explanation = (
+                "No physical chemicals, equipment, or environmental-compliance components remain after "
+                "excluding software/cloud services. "
+            )
+        else:
+            explanation = (
+                "The analyzer did not return any itemized physical chemicals, equipment, or "
+                "environmental-compliance components. The BOM result is incomplete until this is checked. "
+            )
+        analysis.affordability_analysis = (
+            explanation
+            + "The physical BOM assessment is not applicable in its current state; this does not prove "
+            "that implementation is free or affordable. Verify required items and obtain realistic costs. "
+            "Evaluate hosting, compute, data licensing, and operations separately when they are in scope."
+        )
+    elif analysis.total_declared_cost is not None:
         analysis.cost_difference = round(analysis.total_estimated_cost - analysis.total_declared_cost, 2)
     return analysis
 
@@ -294,6 +321,50 @@ def _sanitize_cost_analysis(analysis: CostAnalysis) -> CostAnalysis:
 def _detect_currency(_text: str = "") -> str:
     """Standardized to INR (Indian Rupees ₹) as required for all project evaluations."""
     return "INR"
+
+
+def _is_software_first_project(context: SubmissionContext, deck_text: str) -> bool:
+    """Identify software/AI projects so the physical-process BOM prompt is not misapplied."""
+    domain = (context.problem_domain or "").lower()
+    content = f"{domain} {deck_text[:12000]}".lower()
+    software_signals = (
+        "software", "web app", "mobile app", "saas", "machine learning",
+        "deep learning", "quantum machine learning", "qml", "artificial intelligence",
+        "crop stress detection", "computer vision", "natural language processing",
+        "digital platform", "cloud-based", "cloud based", "simulator", "simulation",
+        "data pipeline", "api-based", "api based",
+    )
+    physical_signals = (
+        "chemical reactor", "effluent treatment", "wastewater treatment plant",
+        "polymer recycling", "extruder", "shredder", "industrial scrubber",
+        "physical prototype", "pilot plant", "process vessel", "chemical reagent",
+        "manufacturing line", "fabrication of hardware",
+    )
+    software_hits = sum(1 for term in software_signals if term in content)
+    physical_hits = sum(1 for term in physical_signals if term in content)
+    return software_hits >= 2 and physical_hits == 0
+
+
+def _software_cost_analysis(deck_text: str) -> CostAnalysis:
+    """Mark the physical BOM as not applicable without pretending software costs are zero."""
+    return CostAnalysis(
+        currency="INR",
+        total_declared_cost=None,
+        total_estimated_cost=0.0,
+        cost_difference=None,
+        missing_components_count=0,
+        affordability_verdict="not_applicable",
+        affordability_score_recommendation=0.0,
+        affordability_analysis=(
+            "This is a software/AI-first solution, so a chemical-process BOM is not applicable. "
+            "No defensible rupee estimate can be computed from the deck alone because deployment "
+            "duration, compute tier, data licensing, usage volume, and operational scale are not "
+            "specified. The displayed ₹0 is a placeholder meaning 'not quantified', not evidence "
+            "that implementation is free or affordable. Confirm applicable cost items and obtain "
+            "current vendor prices before assigning a final affordability score."
+        ),
+        components=[],
+    )
 
 
 async def generate_cost_analysis(
@@ -307,6 +378,10 @@ async def generate_cost_analysis(
     declared costs against market benchmarks in Indian Rupees (INR ₹), and calculates true project cost and affordability."""
     settings = get_settings()
     detected_currency = "INR"
+
+    # A software-first project should not be evaluated by the physical BOM prompt.
+    if _is_software_first_project(context, deck_text):
+        return _software_cost_analysis(deck_text)
 
     if not settings.groq_api_key:
         logger.warning("GROQ_API_KEY missing; using rule-based cost estimation fallback.")
