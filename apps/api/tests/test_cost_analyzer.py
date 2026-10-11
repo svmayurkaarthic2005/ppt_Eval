@@ -105,6 +105,7 @@ async def test_generate_cost_analysis_fallback_mode():
     assert len(result.components) > 0
     assert result.total_estimated_cost > 0
     assert result.affordability_verdict in [
+        "not_applicable",
         "highly_affordable",
         "moderate_realistic",
         "underestimated_missing_components",
