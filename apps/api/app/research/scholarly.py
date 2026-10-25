@@ -30,7 +30,7 @@ AcademicBenchmarkStatus = Literal[
 
 class ScholarlyPaper(BaseModel):
     title: str
-    source: str  # "Semantic Scholar", "IEEE", "arXiv", "IEEE / CrossRef"
+    source: str  # "IEEE", "arXiv", "IEEE / CrossRef"
     venue: str
     authors: str
     year: str
@@ -46,67 +46,6 @@ class AcademicBenchmark(BaseModel):
     why_ranked_explanation: str
     better_than_existing_aspects: list[str]
     limitations_and_tradeoffs: list[str]
-
-
-async def fetch_semantic_scholar_papers(query: str, max_results: int = 4) -> list[ScholarlyPaper]:
-    """Queries Semantic Scholar Graph API using the configured S2 API key from .env."""
-    settings = get_settings()
-    api_key = (settings.semantic_scholar_api_key or "").strip()
-    if not api_key:
-        return []
-    papers: list[ScholarlyPaper] = []
-    try:
-        headers = {"User-Agent": _USER_AGENT, "x-api-key": api_key}
-        url = "https://api.semanticscholar.org/graph/v1/paper/search"
-        params: dict[str, str | int] = {
-            "query": query,
-            "limit": max_results,
-            "fields": "title,year,venue,authors,abstract,citationCount,url,openAccessPdf",
-        }
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            for attempt in range(3):
-                resp = await client.get(url, params=params, headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for item in data.get("data", []):
-                        title = (item.get("title") or "").strip().replace("\n", " ")
-                        if not title:
-                            continue
-                        venue = item.get("venue") or "Semantic Scholar"
-                        year = str(item.get("year") or "2024")
-                        authors_list = item.get("authors") or []
-                        authors = ", ".join(a.get("name", "") for a in authors_list[:3] if a.get("name")) or "Researchers"
-                        url_val = item.get("url") or (item.get("openAccessPdf") or {}).get("url") or f"https://www.semanticscholar.org/search?q={query}"
-                        citations = item.get("citationCount")
-                        summary = (item.get("abstract") or "").strip().replace("\n", " ")
-                        if summary:
-                            summary = summary[:280] + ("..." if len(summary) > 280 else "")
-                        else:
-                            summary = f"Indexed in {venue} ({year}). Peer-reviewed academic benchmark."
-                        if citations is not None and citations > 0:
-                            summary += f" · {citations} citations"
-
-                        papers.append(
-                            ScholarlyPaper(
-                                title=title,
-                                source="Semantic Scholar",
-                                venue=f"{venue} ({year})",
-                                authors=authors,
-                                year=year,
-                                url=url_val,
-                                summary=summary,
-                            )
-                        )
-                    break
-                elif resp.status_code == 429 and attempt < 2:
-                    logger.info("Semantic Scholar rate-limited (429), retrying in %.1fs...", 1.2 * (attempt + 1))
-                    await asyncio.sleep(1.2 * (attempt + 1))
-                else:
-                    logger.warning("Semantic Scholar HTTP %s: %s", resp.status_code, resp.text[:120])
-                    break
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Semantic Scholar query failed: %s", exc)
-    return papers
 
 
 async def fetch_crossref_ieee_papers(query: str, max_results: int = 4) -> list[ScholarlyPaper]:
@@ -208,7 +147,7 @@ async def fetch_arxiv_papers(query: str, max_results: int = 4) -> list[Scholarly
 
 
 async def fetch_academic_literature(domain: str, problem_text: str, deck_sample: str) -> list[ScholarlyPaper]:
-    """Fetches relevant peer-reviewed and preprint literature from Semantic Scholar, IEEE, and arXiv."""
+    """Fetches relevant peer-reviewed and preprint literature from IEEE/CrossRef and arXiv."""
     query_parts = [p for p in [domain, problem_text[:80]] if p]
     query = " ".join(query_parts)
     stop_words = {"need", "early", "reliable", "rarely", "available", "classical", "their", "about", "using", "with", "from", "that", "this"}
@@ -216,11 +155,10 @@ async def fetch_academic_literature(domain: str, problem_text: str, deck_sample:
     filtered = [w for w in raw_words if w.lower() not in stop_words]
     search_term = " ".join(filtered[:5]) or domain or problem_text[:80] or deck_sample[:80] or "multidisciplinary research"
 
-    s2_task = fetch_semantic_scholar_papers(search_term, max_results=4)
     ieee_task = fetch_crossref_ieee_papers(search_term, max_results=4)
     arxiv_task = fetch_arxiv_papers(search_term, max_results=4)
 
-    results = await asyncio.gather(s2_task, ieee_task, arxiv_task, return_exceptions=True)
+    results = await asyncio.gather(ieee_task, arxiv_task, return_exceptions=True)
     all_papers: list[ScholarlyPaper] = []
     for r in results:
         if isinstance(r, list):
@@ -282,7 +220,7 @@ async def generate_academic_benchmark(
     papers: list[ScholarlyPaper],
 ) -> AcademicBenchmark:
     """Uses LLM to synthesize how the proposed solution compares to existing systems
-    and why it ranked where it did, grounded in real IEEE, Semantic Scholar, and arXiv research."""
+    and why it ranked where it did, grounded in real IEEE/CrossRef and arXiv research."""
     if not papers:
         logger.info("Zero academic papers retrieved for %s; returning honest no_literature_found benchmark.", context.problem_domain)
         return AcademicBenchmark(

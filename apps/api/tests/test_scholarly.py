@@ -10,7 +10,6 @@ from app.models.schemas import SubmissionContext
 from app.research.scholarly import (
     ScholarlyPaper,
     fetch_arxiv_papers,
-    fetch_semantic_scholar_papers,
     generate_academic_benchmark,
 )
 
@@ -101,34 +100,6 @@ async def test_generate_academic_benchmark_synthesis_failure(sample_context, sam
     assert len(benchmark.papers) == 1  # Preserves papers for manual review
     assert "failed" in benchmark.existing_solutions_summary.lower()
     assert "no superiority claim" in benchmark.better_than_existing_aspects[0].lower()
-
-
-@pytest.mark.asyncio
-async def test_fetch_semantic_scholar_papers_success():
-    """Mock Semantic Scholar API returning valid papers."""
-    mock_json = {
-        "data": [
-            {
-                "title": "Deep Learning for Rural Healthcare",
-                "venue": "Lancet Digital Health",
-                "year": 2023,
-                "authors": [{"name": "Dr. Smith"}, {"name": "Dr. Jones"}],
-                "abstract": "A study on deploying deep learning models in low-resource settings.",
-                "url": "https://doi.org/10.1016/S2589-7500(23)00001-1",
-                "citationCount": 42,
-            }
-        ]
-    }
-    with patch("app.research.scholarly.get_settings") as mock_settings:
-        mock_settings.return_value.semantic_scholar_api_key = "fake_key"
-        with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
-            mock_get.return_value = httpx.Response(200, json=mock_json, request=httpx.Request("GET", "https://api.semanticscholar.org"))
-            papers = await fetch_semantic_scholar_papers("rural healthcare")
-
-    assert len(papers) == 1
-    assert papers[0].title == "Deep Learning for Rural Healthcare"
-    assert "42 citations" in papers[0].summary
-    assert "Dr. Smith, Dr. Jones" == papers[0].authors
 
 
 @pytest.mark.asyncio
