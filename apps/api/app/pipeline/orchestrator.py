@@ -586,13 +586,18 @@ async def run_stage2_deep_analysis(
     ]
 
     def _should_skip(criterion_key: str) -> bool:
-        return (
-            criterion_key in already_scored
-            and submission["status"] == "scored"
-            and not is_stale
-            and not force_rescore
-            and (rescore_criteria is None or criterion_key not in rescore_criteria)
-        )
+        # A criterion already in criterion_scores must be skipped on resume
+        # regardless of the submission's overall status -- a mid-run worker
+        # restart leaves status='analyzing' with some criteria already
+        # persisted, and re-requiring status=='scored' here (as a prior
+        # version of this check did) meant every resume re-scored already-
+        # done criteria for nothing, which also collided with the DB's
+        # per-section row-count trigger on the resulting redundant upsert.
+        if is_stale or force_rescore:
+            return False  # explicit full rescore: never skip
+        if rescore_criteria is not None:
+            return criterion_key in already_scored and criterion_key not in rescore_criteria
+        return criterion_key in already_scored
 
     sections: dict[str, list] = {}
     for criterion in rubric.criteria:
