@@ -159,7 +159,10 @@ export default function RankingTable({
             <th className="px-4 py-3.5 w-10"></th>
             <th className="px-4 py-3.5">Rank</th>
             <th className="px-4 py-3.5">Team & Project</th>
-            <th className="px-4 py-3.5">Total Score</th>
+            {/* Hidden below sm: the score is shown inline under the team
+                name there instead, so it's visible without having to
+                scroll the table horizontally on a phone. */}
+            <th className="hidden sm:table-cell px-4 py-3.5">Total Score</th>
             {sectionKeys.map((key) => (
               <th key={key} className="px-4 py-3.5 whitespace-nowrap">
                 {key === "execution_plan_timeline"
@@ -212,9 +215,17 @@ export default function RankingTable({
                     <span className="block text-[11px] text-slate-600">
                       ID: {row.submission_id.slice(0, 8)}...
                     </span>
+                    {/* Score shown here only below sm, mirroring the
+                        standalone Total Score column that's hidden there. */}
+                    <span className="mt-1 flex items-center gap-1.5 sm:hidden">
+                      <span className="font-extrabold tabular-nums text-slate-900 text-sm">
+                        {Number(row.total.toFixed(2))}
+                      </span>
+                      <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
+                    </span>
                   </Link>
                 </td>
-                <td className="whitespace-nowrap px-4 py-3.5">
+                <td className="hidden sm:table-cell whitespace-nowrap px-4 py-3.5">
                   <div className="flex items-center gap-2.5">
                     <span className="font-extrabold tabular-nums text-slate-900 text-sm">
                       {Number(row.total.toFixed(2))}
