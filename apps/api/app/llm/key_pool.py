@@ -65,4 +65,4 @@ class GroqKeyPool:
 @lru_cache
 def get_key_pool() -> GroqKeyPool:
     settings = get_settings()
-    return GroqKeyPool([settings.groq_api_key, settings.groq_api_key_2])
+    return GroqKeyPool([settings.groq_api_key, settings.groq_api_key_2, settings.groq_api_key_3])

@@ -63,3 +63,21 @@ def test_mark_exhausted_stops_at_the_last_key():
     pool.mark_exhausted("key-a")
     assert pool.mark_exhausted("key-b") is False
     assert pool.current == "key-b"
+
+
+def test_get_key_pool_reads_all_three_configured_keys(monkeypatch):
+    import app.llm.key_pool as key_pool_module
+
+    class _FakeSettings:
+        groq_api_key = "key-1"
+        groq_api_key_2 = "key-2"
+        groq_api_key_3 = "key-3"
+
+    key_pool_module.get_key_pool.cache_clear()
+    monkeypatch.setattr(key_pool_module, "get_settings", lambda: _FakeSettings())
+
+    pool = key_pool_module.get_key_pool()
+
+    assert len(pool) == 3
+    assert pool.current == "key-1"
+    key_pool_module.get_key_pool.cache_clear()
