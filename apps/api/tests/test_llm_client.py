@@ -11,8 +11,10 @@ from app.llm.client import (
     _build_messages,
     _criterion_json_schema,
     _estimate_tokens,
+    _section_json_schema,
     _validate_score,
     evaluate_criterion,
+    evaluate_section,
 )
 from app.models.schemas import SubmissionContext
 from app.rubric.builder import RubricCriterionForSubmission
@@ -199,3 +201,160 @@ async def test_evaluate_criterion_averages_scores_across_image_batches(monkeypat
     assert evaluation.status == "scored"
     assert evaluation.result is not None
     assert evaluation.result.score == round((10 + 2) / 2)
+
+
+def test_section_json_schema_has_one_sub_object_per_criterion():
+    criteria = [
+        RubricCriterionForSubmission(
+            section_key="problem_understanding",
+            criterion_key="problem_clearly_defined",
+            name="Problem clearly defined",
+            max_score=2,
+        ),
+        RubricCriterionForSubmission(
+            section_key="problem_understanding",
+            criterion_key="target_beneficiary_identified",
+            name="Target beneficiary identified",
+            max_score=2,
+        ),
+    ]
+    schema = _section_json_schema(criteria)
+    assert set(schema["properties"]) == {"problem_clearly_defined", "target_beneficiary_identified"}
+    assert schema["required"] == ["problem_clearly_defined", "target_beneficiary_identified"]
+    assert schema["properties"]["problem_clearly_defined"]["properties"]["score"]["maximum"] == 2
+    assert schema["additionalProperties"] is False
+
+
+def _section_criteria() -> list[RubricCriterionForSubmission]:
+    return [
+        RubricCriterionForSubmission(
+            section_key="problem_understanding",
+            criterion_key="problem_clearly_defined",
+            name="Problem clearly defined",
+            max_score=2,
+        ),
+        RubricCriterionForSubmission(
+            section_key="problem_understanding",
+            criterion_key="target_beneficiary_identified",
+            name="Target beneficiary identified",
+            max_score=2,
+        ),
+    ]
+
+
+def _section_context() -> SubmissionContext:
+    return SubmissionContext(
+        problem_domain="rural healthcare",
+        target_beneficiary="community health workers",
+        required_deliverables=[],
+        track_constraints=[],
+        is_generic=False,
+        generic_reason=None,
+    )
+
+
+async def test_evaluate_section_scores_every_criterion_in_one_call(monkeypatch):
+    """The whole point of batching: one Groq call scores both criteria in
+    the section, not one call per criterion."""
+    call_count = 0
+
+    async def fake_post_with_backoff(client, payload, api_key):
+        nonlocal call_count
+        call_count += 1
+        import json as _json
+
+        return _FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": _json.dumps(
+                                {
+                                    "problem_clearly_defined": {
+                                        "score": 1.5,
+                                        "max_score": 2,
+                                        "rationale": "clear",
+                                        "evidence_refs": [1],
+                                    },
+                                    "target_beneficiary_identified": {
+                                        "score": 2,
+                                        "max_score": 2,
+                                        "rationale": "explicit",
+                                        "evidence_refs": [2],
+                                    },
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.llm.client.post_with_backoff", fake_post_with_backoff)
+
+    class _FakeSettings:
+        groq_api_key = "test-key-not-real"
+
+    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+
+    slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
+    evaluations = await evaluate_section(
+        _FakeConn(), uuid4(), _section_criteria(), slides, _section_context()
+    )
+
+    assert call_count == 1  # one Groq call scored both criteria
+    assert evaluations["problem_clearly_defined"].status == "scored"
+    assert evaluations["problem_clearly_defined"].result.score == 1.5
+    assert evaluations["target_beneficiary_identified"].status == "scored"
+    assert evaluations["target_beneficiary_identified"].result.score == 2
+
+
+async def test_evaluate_section_flags_the_whole_section_when_a_key_is_missing(monkeypatch):
+    """The request's schema makes every criterion key required and strict,
+    so a response missing one is a schema violation -- both attempts get
+    retried and, failing that, the whole section is flagged for human
+    review rather than silently scoring the criteria that did parse."""
+    import json as _json
+
+    async def fake_post_with_backoff(client, payload, api_key):
+        return _FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": _json.dumps(
+                                {
+                                    "problem_clearly_defined": {
+                                        "score": 1.5,
+                                        "max_score": 2,
+                                        "rationale": "clear",
+                                        "evidence_refs": [1],
+                                    }
+                                    # target_beneficiary_identified is missing
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.llm.client.post_with_backoff", fake_post_with_backoff)
+
+    class _FakeSettings:
+        groq_api_key = "test-key-not-real"
+
+    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+
+    slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
+    evaluations = await evaluate_section(
+        _FakeConn(), uuid4(), _section_criteria(), slides, _section_context()
+    )
+
+    assert evaluations["problem_clearly_defined"].status == "needs_human_review"
+    assert evaluations["target_beneficiary_identified"].status == "needs_human_review"
+
+
+async def test_evaluate_section_with_no_criteria_returns_empty():
+    evaluations = await evaluate_section(_FakeConn(), uuid4(), [], [], _section_context())
+    assert evaluations == {}

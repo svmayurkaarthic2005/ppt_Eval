@@ -36,7 +36,7 @@ import httpx
 from app.calibration.reliability import compute_and_store_reliability_label
 from app.comparison import invalidate_for_submission
 from app.config import get_settings
-from app.llm.client import GROQ_MODEL, EvidenceSlide, evaluate_criterion, post_with_backoff
+from app.llm.client import GROQ_MODEL, EvidenceSlide, evaluate_section, post_with_backoff
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
 from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter
 from app.models.schemas import SubmissionContext
@@ -573,64 +573,79 @@ async def run_stage2_deep_analysis(
 
     storage = get_service_client().storage.from_("rendered-slides")
 
-    for criterion in rubric.criteria:
-        should_skip = (
-            criterion.criterion_key in already_scored
+    # Same evidence for every criterion/section -- built once rather than
+    # re-downloaded from storage per criterion (was 20 redundant fetches of
+    # the same images; now 1).
+    evidence_slides = [
+        EvidenceSlide(
+            slide_number=s["slide_number"],
+            raw_text=s["raw_text"] or "",
+            image_bytes=_download_first_image(storage, s["image_storage_paths"]),
+        )
+        for s in slides
+    ]
+
+    def _should_skip(criterion_key: str) -> bool:
+        return (
+            criterion_key in already_scored
             and submission["status"] == "scored"
             and not is_stale
             and not force_rescore
-            and (rescore_criteria is None or criterion.criterion_key not in rescore_criteria)
+            and (rescore_criteria is None or criterion_key not in rescore_criteria)
         )
-        if should_skip:
-            continue  # resume-safe: don't re-charge for a criterion already scored
 
-        evidence_slides = [
-            EvidenceSlide(
-                slide_number=s["slide_number"],
-                raw_text=s["raw_text"] or "",
-                image_bytes=_download_first_image(storage, s["image_storage_paths"]),
-            )
-            for s in slides
-        ]
-        evaluation = await evaluate_criterion(
+    sections: dict[str, list] = {}
+    for criterion in rubric.criteria:
+        if _should_skip(criterion.criterion_key):
+            continue  # resume-safe: don't re-charge for a criterion already scored
+        sections.setdefault(criterion.section_key, []).append(criterion)
+
+    for section_criteria in sections.values():
+        # All criteria in a rubric section are scored in one Groq call
+        # (instead of one call per criterion) -- same evidence images get
+        # sent once per section instead of once per criterion, which is
+        # what actually cuts Groq call volume under a tight ITPM rate limit.
+        section_evaluations = await evaluate_section(
             conn,
             submission_id,
-            criterion,
+            section_criteria,
             evidence_slides,
             context,
             rate_limiter=default_rate_limiter,
             academic_context=academic_context,
             cost_context=cost_context,
         )
-        if evaluation.status == "scored" and evaluation.result is not None:
-            score, rationale = evaluation.result.score, evaluation.result.rationale
-        else:
-            # Both attempts failed (already flagged criterion_needs_human_review
-            # above). Without a criterion_scores row here, the completeness
-            # check in finalize_submission_if_complete can never pass and this
-            # submission would be stuck in 'analyzing' forever with no retry
-            # path -- a 0 placeholder lets it reach a terminal state, with the
-            # high-severity flag pointing a reviewer at exactly what to recheck.
-            score, rationale = 0.0, "Auto-scoring failed after retrying once; needs human review."
+        for criterion in section_criteria:
+            evaluation = section_evaluations[criterion.criterion_key]
+            if evaluation.status == "scored" and evaluation.result is not None:
+                score, rationale = evaluation.result.score, evaluation.result.rationale
+            else:
+                # Both attempts failed (already flagged criterion_needs_human_review
+                # above). Without a criterion_scores row here, the completeness
+                # check in finalize_submission_if_complete can never pass and this
+                # submission would be stuck in 'analyzing' forever with no retry
+                # path -- a 0 placeholder lets it reach a terminal state, with the
+                # high-severity flag pointing a reviewer at exactly what to recheck.
+                score, rationale = 0.0, "Auto-scoring failed after retrying once; needs human review."
 
-        await conn.execute(
-            """
-            insert into criterion_scores
-                (submission_id, section_key, criterion_key, llm_score, max_score, rationale)
-            values ($1, $2, $3, $4, $5, $6)
-            on conflict (submission_id, criterion_key) do update set
-                llm_score = excluded.llm_score,
-                max_score = excluded.max_score,
-                rationale = excluded.rationale,
-                updated_at = now()
-            """,
-            submission_id,
-            criterion.section_key,
-            criterion.criterion_key,
-            score,
-            criterion.max_score,
-            rationale,
-        )
+            await conn.execute(
+                """
+                insert into criterion_scores
+                    (submission_id, section_key, criterion_key, llm_score, max_score, rationale)
+                values ($1, $2, $3, $4, $5, $6)
+                on conflict (submission_id, criterion_key) do update set
+                    llm_score = excluded.llm_score,
+                    max_score = excluded.max_score,
+                    rationale = excluded.rationale,
+                    updated_at = now()
+                """,
+                submission_id,
+                criterion.section_key,
+                criterion.criterion_key,
+                score,
+                criterion.max_score,
+                rationale,
+            )
 
     written_claims = [SlideText(slide_number=s["slide_number"], raw_text=s["raw_text"] or "") for s in slides]
     await check_cross_modal_consistency(conn, submission_id, written_claims)
