@@ -37,11 +37,14 @@ export function estimateRemaining(audit: SubmissionAudit | null): string | null 
     if (!isNaN(startTime)) {
       const elapsedMs = Math.max(0, Date.now() - startTime);
       const measured = elapsedMs / scored;
-      // Clamp to realistic range (1s - 7s) to prevent idle wait or date-skew inflation
-      if (measured >= 1000 && measured <= 7000) {
-        perCriterionMs = measured;
-      } else if (measured > 7000) {
-        perCriterionMs = 3000;
+      // Floor guards against date skew making scoring look impossibly fast.
+      // No low ceiling on the slow side: a tight Groq rate limit can genuinely
+      // push per-criterion time past a minute under 429 backoff, and silently
+      // substituting a faster guess there understated the ETA by 10x+. A high
+      // ceiling (10 min/criterion) still guards the display against a stalled
+      // worker producing an absurd multi-hour estimate.
+      if (measured >= 1000) {
+        perCriterionMs = Math.min(measured, 600_000);
       }
     }
   }
