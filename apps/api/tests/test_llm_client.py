@@ -358,3 +358,110 @@ async def test_evaluate_section_flags_the_whole_section_when_a_key_is_missing(mo
 async def test_evaluate_section_with_no_criteria_returns_empty():
     evaluations = await evaluate_section(_FakeConn(), uuid4(), [], [], _section_context())
     assert evaluations == {}
+
+
+async def test_evaluate_section_handles_empty_choices_without_crashing(monkeypatch):
+    """raw["choices"][0] on an empty list raises IndexError -- this must be
+    caught and retried like any other malformed response, not propagate."""
+
+    async def fake_post_with_backoff(client, payload, api_key):
+        return _FakeResponse({"choices": []})
+
+    monkeypatch.setattr("app.llm.client.post_with_backoff", fake_post_with_backoff)
+
+    class _FakeSettings:
+        groq_api_key = "test-key-not-real"
+
+    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+
+    slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
+    evaluations = await evaluate_section(
+        _FakeConn(), uuid4(), _section_criteria(), slides, _section_context()
+    )
+
+    assert evaluations["problem_clearly_defined"].status == "needs_human_review"
+    assert evaluations["target_beneficiary_identified"].status == "needs_human_review"
+
+
+async def test_evaluate_section_averages_scores_across_image_batches(monkeypatch):
+    """Mirrors test_evaluate_criterion_averages_scores_across_image_batches
+    for the batched path: more than IMAGE_BATCH_SIZE image-bearing slides
+    triggers multiple Groq calls for the same section, and each criterion's
+    score must be averaged across those calls, not just taken from one."""
+    import json as _json
+
+    call_scores = iter([(1.0, 2.0), (2.0, 0.0)])  # (criterion_a, criterion_b) per call
+
+    async def fake_post_with_backoff(client, payload, api_key):
+        a_score, b_score = next(call_scores)
+        return _FakeResponse(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": _json.dumps(
+                                {
+                                    "problem_clearly_defined": {
+                                        "score": a_score,
+                                        "max_score": 2,
+                                        "rationale": "r",
+                                        "evidence_refs": [],
+                                    },
+                                    "target_beneficiary_identified": {
+                                        "score": b_score,
+                                        "max_score": 2,
+                                        "rationale": "r",
+                                        "evidence_refs": [],
+                                    },
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("app.llm.client.post_with_backoff", fake_post_with_backoff)
+
+    class _FakeSettings:
+        groq_api_key = "test-key-not-real"
+
+    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+
+    # IMAGE_BATCH_SIZE images in the first batch, 1 more in a second batch.
+    slides = [
+        EvidenceSlide(slide_number=i, raw_text=f"slide {i}", image_bytes=b"x")
+        for i in range(IMAGE_BATCH_SIZE + 1)
+    ]
+
+    evaluations = await evaluate_section(
+        _FakeConn(), uuid4(), _section_criteria(), slides, _section_context()
+    )
+
+    assert evaluations["problem_clearly_defined"].status == "scored"
+    assert evaluations["problem_clearly_defined"].result.score == round((1.0 + 2.0) / 2, 2)
+    assert evaluations["target_beneficiary_identified"].status == "scored"
+    assert evaluations["target_beneficiary_identified"].result.score == round((2.0 + 0.0) / 2, 2)
+
+
+async def test_evaluate_section_handles_non_string_content_without_crashing(monkeypatch):
+    """content being None (or any non-string) raises TypeError from
+    json.loads -- this must be caught and retried, not propagate."""
+
+    async def fake_post_with_backoff(client, payload, api_key):
+        return _FakeResponse({"choices": [{"message": {"content": None}}]})
+
+    monkeypatch.setattr("app.llm.client.post_with_backoff", fake_post_with_backoff)
+
+    class _FakeSettings:
+        groq_api_key = "test-key-not-real"
+
+    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+
+    slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
+    evaluations = await evaluate_section(
+        _FakeConn(), uuid4(), _section_criteria(), slides, _section_context()
+    )
+
+    assert evaluations["problem_clearly_defined"].status == "needs_human_review"
+    assert evaluations["target_beneficiary_identified"].status == "needs_human_review"

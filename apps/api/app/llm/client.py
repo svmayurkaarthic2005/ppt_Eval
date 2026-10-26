@@ -623,7 +623,12 @@ async def _evaluate_section_batch(
                 results[c.criterion_key] = r.model_copy(
                     update={"max_score": float(c.max_score), "score": round(float(r.score), 2)}
                 )
-        except (KeyError, ValueError, ValidationError) as exc:
+        except (KeyError, IndexError, TypeError, ValueError, ValidationError) as exc:
+            # IndexError: raw["choices"][0] on an empty choices list.
+            # TypeError: content isn't a string (e.g. raw/content is None),
+            # or a criterion's sub-object isn't a dict. Both are malformed-
+            # response shapes just like the others here -- all must fall
+            # through to retry-then-needs_human_review, never crash the job.
             logger.warning(
                 "section %s: schema validation failed (attempt %d/%d): %s",
                 criteria[0].section_key,
