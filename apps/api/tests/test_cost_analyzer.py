@@ -171,7 +171,7 @@ def test_software_cost_analysis_does_not_fabricate_zero_cost():
 def test_resolve_source_info_provenance():
     # Catalog search with platform identification
     name, url, provenance = _resolve_source_info(
-        "Raspberry Pi 4", "equipment_hardware", "Amazon India", "", "INR"
+        "Raspberry Pi 4", "equipment_hardware", "Amazon India", "INR"
     )
     assert "Amazon India" in name
     assert "amazon.in" in url
@@ -179,7 +179,7 @@ def test_resolve_source_info_provenance():
 
     # Sigma Aldrich
     name, url, provenance = _resolve_source_info(
-        "ABS Resin", "chemicals_reagents", "Sigma-Aldrich", "", "INR"
+        "ABS Resin", "chemicals_reagents", "Sigma-Aldrich", "INR"
     )
     assert "Sigma-Aldrich" in name
     assert "sigmaaldrich.com" in url
@@ -187,9 +187,23 @@ def test_resolve_source_info_provenance():
 
     # Missing vendor
     name, url, provenance = _resolve_source_info(
-        "Unknown Custom Sensor", "sensors_instrumentation", "", "", "INR"
+        "Unknown Custom Sensor", "sensors_instrumentation", "", "INR"
     )
     assert "Robu" in name
+    assert provenance == "indicative_estimate"
+
+
+def test_resolve_source_info_always_synthesizes_a_search_url():
+    """Regression test: the LLM has no live web access, so any specific
+    product-page URL it returns (e.g. an ASIN-looking Amazon link) is a
+    guess that can easily 404 -- _resolve_source_info no longer even takes
+    such a candidate URL as input; every resolved link is always a platform
+    *search* URL, which is guaranteed to resolve to a real page."""
+    _name, url, provenance = _resolve_source_info(
+        "DFRobot Gravity Analog Turbidity Sensor", "sensors_instrumentation", "Amazon India", "INR"
+    )
+    assert url == "https://www.amazon.in/s?k=DFRobot+Gravity+Analog+Turbidity+Sensor"
+    assert "/dp/" not in url
     assert provenance == "indicative_estimate"
 
 

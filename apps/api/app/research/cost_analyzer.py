@@ -235,16 +235,23 @@ def _resolve_source_info(
     name: str,
     category: str,
     source_name: str | None,
-    candidate_url: str | None,
     currency: str,
 ) -> tuple[str, str, PriceProvenance]:
-    """Ensures production-level consistency by synthesizing verified marketplace catalog/search links
-    and explicitly marking them as indicative benchmark estimates rather than claimed real-time quotes."""
+    """Synthesizes a guaranteed-working marketplace catalog/search link and
+    explicitly marks it as an indicative benchmark estimate rather than a
+    claimed real-time quote.
+
+    Deliberately ignores any specific product-page URL the LLM returned for
+    this component rather than trusting it: the model has no live web
+    access, so a deep link like ".../dp/B07ZK5J9L9" is a plausible-looking
+    guess, not a verified page, and presenting it as a clickable source is
+    misleading when it 404s. A platform *search* URL for the component name
+    always resolves to a real page, even if that exact product isn't listed.
+    """
     query = _clean_search_query(name)
     encoded = quote_plus(query)
 
     s_name = (source_name or "").strip()
-    s_url = (candidate_url or "").strip()
 
     # Determine default reputable vendor platform if missing or generic
     if not s_name or s_name.lower() in ("online", "market", "web", "supplier", "vendor", "store", "n/a", "none"):
@@ -258,12 +265,6 @@ def _resolve_source_info(
             s_name = "Amazon India"
         else:
             s_name = "Amazon India"
-
-    # If the candidate URL is already a complete, deep HTTP(S) link
-    if s_url.startswith(("http://", "https://")) and len(s_url) > 22 and ("/" in s_url.split("://", 1)[1]):
-        path_part = s_url.split("://", 1)[1]
-        if "/" in path_part and len(path_part.split("/", 1)[1].strip("/")) > 2:
-            return s_name, s_url, "indicative_estimate"
 
     s_lower = s_name.lower()
     if "amazon" in s_lower:
@@ -529,7 +530,7 @@ def _sanitize_cost_analysis(analysis: CostAnalysis, scope: ProjectScope = "physi
             continue
 
         resolved_name, resolved_url, provenance = _resolve_source_info(
-            c.name, c.category, c.source_name, c.source_url, "INR"
+            c.name, c.category, c.source_name, "INR"
         )
         c.source_name = resolved_name
         c.source_url = resolved_url
