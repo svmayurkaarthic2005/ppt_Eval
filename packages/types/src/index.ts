@@ -69,7 +69,15 @@ export interface ScholarlyPaper {
   summary: string;
 }
 
+export type AcademicBenchmarkStatus =
+  | "completed"
+  | "no_literature_found"
+  | "synthesis_failed"
+  | "unavailable";
+
 export interface AcademicBenchmark {
+  status?: AcademicBenchmarkStatus;
+  query_used?: string;
   papers: ScholarlyPaper[];
   existing_solutions_summary: string;
   gaps_in_existing_solutions: string;
@@ -77,6 +85,37 @@ export interface AcademicBenchmark {
   better_than_existing_aspects: string[];
   limitations_and_tradeoffs: string[];
 }
+
+export type CostAnalysisStatus =
+  | "applicable_evaluated"
+  | "not_applicable"
+  | "incomplete_review_required"
+  | "failed";
+
+export type ProjectScope =
+  | "software_only"
+  | "physical_hardware"
+  | "hybrid"
+  | "uncertain_review_required";
+
+export type PriceProvenance =
+  | "live_verified"
+  | "indicative_estimate"
+  | "unavailable";
+
+export type CostType =
+  | "physical_hardware_capex"
+  | "chemical_consumables_opex"
+  | "software_cloud_opex"
+  | "other";
+
+export type AffordabilityVerdict =
+  | "not_applicable"
+  | "highly_affordable"
+  | "moderate_realistic"
+  | "underestimated_missing_components"
+  | "expensive_high_barrier"
+  | "unassessed";
 
 export interface ProjectComponent {
   name: string;
@@ -88,9 +127,15 @@ export interface ProjectComponent {
     | "waste_disposal_compliance"
     | "software_cloud"
     | "other";
+  cost_type?: CostType;
+  quantity?: number;
+  unit?: string;
+  unit_cost?: number | null;
+  line_total?: number | null;
   is_declared_by_team: boolean;
   declared_cost: number | null;
-  estimated_market_cost: number;
+  estimated_market_cost?: number | null;
+  price_provenance?: PriceProvenance;
   currency: string;
   source_name: string;
   source_url: string;
@@ -98,13 +143,20 @@ export interface ProjectComponent {
 }
 
 export interface CostAnalysis {
+  analysis_status?: CostAnalysisStatus;
+  project_scope?: ProjectScope;
   currency: string;
+  deck_declared_budget?: number | null;
+  itemized_declared_cost?: number | null;
   total_declared_cost: number | null;
-  total_estimated_cost: number;
+  physical_hardware_capex?: number | null;
+  chemical_consumables_opex?: number | null;
+  software_cloud_opex?: number | null;
+  total_estimated_cost: number | null;
   cost_difference: number | null;
   missing_components_count: number;
-  affordability_verdict: "not_applicable" | "highly_affordable" | "moderate_realistic" | "underestimated_missing_components" | "expensive_high_barrier";
-  affordability_score_recommendation: number;
+  affordability_verdict: AffordabilityVerdict;
+  affordability_score_recommendation: number | null;
   affordability_analysis: string;
   components: ProjectComponent[];
 }
@@ -129,6 +181,8 @@ export interface Submission {
   preliminary_score?: number | null;
   academic_benchmark?: AcademicBenchmark | null;
   cost_analysis?: CostAnalysis | null;
+  is_stale?: boolean;
+  evaluation_version?: number;
 }
 
 export interface Slide {
