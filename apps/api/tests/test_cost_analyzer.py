@@ -81,9 +81,12 @@ def test_deterministic_arithmetic_line_totals_and_capex_opex():
             cost_type="capex",
             quantity=2.0,
             unit="units",
+            # Declared cost (31000) deliberately differs from quantity *
+            # estimated_market_cost (2 * 15000 = 30000) -- line_total must
+            # follow the team's declared figure, not the benchmark.
             estimated_market_cost=15000.0,
             is_declared_by_team=True,
-            declared_cost=30000.0,
+            declared_cost=31000.0,
             price_provenance="indicative_estimate",
             currency="INR",
             source_name="IndiaMART",
@@ -119,19 +122,57 @@ def test_deterministic_arithmetic_line_totals_and_capex_opex():
 
     reconciled = _reconcile_and_compute_totals(analysis)
 
-    # Line totals: 2 * 15000 = 30000, 5 * 800 = 4000
-    assert reconciled.components[0].line_total == 30000.0
+    # Line totals: declared (31000) for the declared item, quantity *
+    # estimated_market_cost (5 * 800 = 4000) for the omitted one.
+    assert reconciled.components[0].line_total == 31000.0
     assert reconciled.components[1].line_total == 4000.0
-    # CAPEX = 30000, OPEX = 4000, Total = 34000
-    assert reconciled.physical_hardware_capex == 30000.0
+    # CAPEX = 31000, OPEX = 4000, Total = 35000
+    assert reconciled.physical_hardware_capex == 31000.0
     assert reconciled.chemical_consumables_opex == 4000.0
-    assert reconciled.total_estimated_cost == 34000.0
-    # Declared itemized = 30000, Deck declared budget = 25000
-    assert reconciled.itemized_declared_cost == 30000.0
+    assert reconciled.total_estimated_cost == 35000.0
+    # Declared itemized = 31000, Deck declared budget = 25000
+    assert reconciled.itemized_declared_cost == 31000.0
     assert reconciled.deck_declared_budget == 25000.0
     assert reconciled.missing_components_count == 1
-    # Variance vs deck declared: 34000 - 25000 = 9000
-    assert reconciled.cost_difference == 9000.0
+    # Variance vs deck declared: 35000 - 25000 = 10000
+    assert reconciled.cost_difference == 10000.0
+
+
+def test_declared_cost_takes_precedence_over_benchmark_estimate():
+    """Regression test: line_total used to always be quantity *
+    estimated_market_cost, silently discarding a cost the team explicitly
+    stated in their own deck. A declared component's line total (and
+    therefore the headline CAPEX/OPEX/total) must reflect what the team
+    actually said, not the model's benchmark guess."""
+    components = [
+        ProjectComponent(
+            name="Raspberry Pi 4",
+            category="equipment_hardware",
+            cost_type="capex",
+            quantity=1.0,
+            unit="unit",
+            estimated_market_cost=5000.0,  # benchmark guess, deliberately wrong
+            is_declared_by_team=True,
+            declared_cost=3500.0,  # what the team actually said they paid
+            price_provenance="indicative_estimate",
+            currency="INR",
+            source_name="Amazon India",
+            source_url="https://www.amazon.in/s?k=raspberry+pi+4",
+            notes="",
+        ),
+    ]
+    analysis = CostAnalysis(
+        analysis_status="applicable_evaluated",
+        project_scope="physical_only",
+        currency="INR",
+        components=components,
+    )
+
+    reconciled = _reconcile_and_compute_totals(analysis)
+
+    assert reconciled.components[0].line_total == 3500.0
+    assert reconciled.physical_hardware_capex == 3500.0
+    assert reconciled.total_estimated_cost == 3500.0
 
 
 def test_fallback_cost_analysis_does_not_fabricate_prices():

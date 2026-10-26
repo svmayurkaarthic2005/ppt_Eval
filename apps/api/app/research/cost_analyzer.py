@@ -520,7 +520,17 @@ def _sanitize_cost_analysis(analysis: CostAnalysis, scope: ProjectScope = "physi
         c.currency = "INR"
         if c.quantity <= 0:
             c.quantity = 1.0
-        c.line_total = round(c.quantity * c.estimated_market_cost, 2)
+        # The team's own declared cost for a line item is ground truth for
+        # what THEY'RE claiming it costs -- use it, rather than silently
+        # overriding it with the model's benchmark estimate. The benchmark
+        # estimate still applies only to items the team didn't cost out
+        # themselves (declared_cost is None), which is exactly what it's
+        # for: filling in a realistic number for an omission, not
+        # second-guessing a number the team actually gave.
+        if c.declared_cost is not None and c.declared_cost >= 0:
+            c.line_total = round(c.declared_cost, 2)
+        else:
+            c.line_total = round(c.quantity * c.estimated_market_cost, 2)
 
         if _is_subscription_or_cloud(c.name, c.category, c.notes):
             c.cost_type = "software_service"
