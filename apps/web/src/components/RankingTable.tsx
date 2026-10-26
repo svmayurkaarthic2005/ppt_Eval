@@ -152,7 +152,7 @@ export default function RankingTable({
   onDeleteRow?: (row: RankingRow) => void;
 }) {
   return (
-    <div className="stitch-card overflow-x-auto rounded-2xl shadow-sm">
+    <div className="stitch-card overflow-x-auto rounded-2xl shadow-sm [mask-image:linear-gradient(to_right,black_96%,transparent_100%)]">
       <table className="w-full min-w-max text-left text-sm border-collapse">
         <thead>
           <tr className="border-b border-slate-200/80 bg-slate-50/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
@@ -163,8 +163,12 @@ export default function RankingTable({
                 name there instead, so it's visible without having to
                 scroll the table horizontally on a phone. */}
             <th className="hidden sm:table-cell px-4 py-3.5">Total Score</th>
+            {/* Per-section breakdown is already shown on each team's own
+                detail page -- hidden below lg here so the table doesn't
+                force a long horizontal scroll on mobile/tablet just to
+                reach Reliability/Flags/Actions. */}
             {sectionKeys.map((key) => (
-              <th key={key} className="px-4 py-3.5 whitespace-nowrap">
+              <th key={key} className="hidden lg:table-cell px-4 py-3.5 whitespace-nowrap">
                 {key === "execution_plan_timeline"
                   ? "Timeline"
                   : key === "existing_solutions"
@@ -240,7 +244,7 @@ export default function RankingTable({
                   </div>
                 </td>
                 {sectionKeys.map((key) => (
-                  <td key={key} className="px-4 py-3.5 text-slate-600 font-semibold tabular-nums text-xs sm:text-sm">
+                  <td key={key} className="hidden lg:table-cell px-4 py-3.5 text-slate-600 font-semibold tabular-nums text-xs sm:text-sm">
                     {row.section_totals[key] != null ? Number(row.section_totals[key].toFixed(2)) : "-"}
                   </td>
                 ))}
