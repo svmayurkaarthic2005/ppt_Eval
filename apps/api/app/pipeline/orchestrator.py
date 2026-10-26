@@ -36,7 +36,15 @@ import httpx
 from app.calibration.reliability import compute_and_store_reliability_label
 from app.comparison import invalidate_for_submission
 from app.config import get_settings
-from app.llm.client import GROQ_MODEL, EvidenceSlide, evaluate_section, post_with_backoff
+from app.llm.client import (
+    GROQ_MODEL,
+    EvidenceSlide,
+    evaluate_section,
+    extract_visual_evidence,
+    post_with_backoff,
+    render_visual_evidence_text,
+    select_informative_slides,
+)
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
 from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter
 from app.models.schemas import SubmissionContext
@@ -443,7 +451,8 @@ async def run_stage2_deep_analysis(
     rubric = build_rubric(template["id"], template["sections"], context)
 
     slides = await conn.fetch(
-        "select slide_number, raw_text, tables, image_storage_paths from slides where submission_id = $1 order by slide_number",
+        "select slide_number, raw_text, tables, image_storage_paths, classified_role "
+        "from slides where submission_id = $1 order by slide_number",
         submission_id,
     )
 
@@ -581,6 +590,7 @@ async def run_stage2_deep_analysis(
             slide_number=s["slide_number"],
             raw_text=s["raw_text"] or "",
             image_bytes=_download_first_image(storage, s["image_storage_paths"]),
+            classified_role=s["classified_role"],
         )
         for s in slides
     ]
@@ -605,11 +615,30 @@ async def run_stage2_deep_analysis(
             continue  # resume-safe: don't re-charge for a criterion already scored
         sections.setdefault(criterion.section_key, []).append(criterion)
 
+    # ONE bounded visual-analysis call for the whole submission (not one per
+    # section): select at most MAX_VISUAL_EVIDENCE_IMAGES informative slides
+    # (preferring workflow/architecture and cost slides), inspect them once,
+    # and reuse the resulting compact text summary across every section's
+    # scoring call below instead of re-attaching the same images each time.
+    # Skipped entirely when nothing needs scoring (pure resume/finalize).
+    visual_evidence_text = ""
+    if sections:
+        total_image_slides = sum(1 for s in evidence_slides if s.image_bytes is not None)
+        selected_slides = select_informative_slides(evidence_slides)
+        visual_evidence = await extract_visual_evidence(
+            conn,
+            submission_id,
+            selected_slides,
+            total_image_slides,
+            rate_limiter=default_rate_limiter,
+        )
+        visual_evidence_text = render_visual_evidence_text(visual_evidence)
+
     for section_criteria in sections.values():
         # All criteria in a rubric section are scored in one Groq call
-        # (instead of one call per criterion) -- same evidence images get
-        # sent once per section instead of once per criterion, which is
-        # what actually cuts Groq call volume under a tight ITPM rate limit.
+        # (instead of one call per criterion), text-only -- the same visual
+        # evidence text above is reused for every section rather than
+        # re-sending images per section.
         section_evaluations = await evaluate_section(
             conn,
             submission_id,
@@ -619,6 +648,7 @@ async def run_stage2_deep_analysis(
             rate_limiter=default_rate_limiter,
             academic_context=academic_context,
             cost_context=cost_context,
+            visual_evidence_text=visual_evidence_text,
         )
         for criterion in section_criteria:
             evaluation = section_evaluations[criterion.criterion_key]
