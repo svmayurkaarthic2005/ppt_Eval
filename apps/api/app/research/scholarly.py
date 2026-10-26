@@ -10,8 +10,8 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
-from app.config import get_settings
 from app.llm.client import post_with_backoff
+from app.llm.key_pool import get_key_pool
 from app.llm.prompt_safety import wrap_untrusted
 from app.models.schemas import SubmissionContext
 
@@ -278,7 +278,7 @@ Produce an evidence-grounded comparison that is relevant to the stated problem a
     ]
 
     try:
-        settings = get_settings()
+        pool = get_key_pool()
         payload = {
             "model": "openai/gpt-oss-120b",
             "temperature": 0.2,
@@ -293,7 +293,7 @@ Produce an evidence-grounded comparison that is relevant to the stated problem a
             },
         }
         async with httpx.AsyncClient(timeout=45.0) as client:
-            resp = await post_with_backoff(client, payload, settings.groq_api_key)
+            resp = await post_with_backoff(client, payload, pool)
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
         parsed = json.loads(content)

@@ -2,7 +2,12 @@ import time
 
 import pytest
 
-from app.llm.rate_limiter import BucketCapacityExceededError, GroqRateLimiter, TokenBucket
+from app.llm.rate_limiter import (
+    BucketCapacityExceededError,
+    GroqRateLimiter,
+    TokenBucket,
+    get_rate_limiter_for_key,
+)
 
 
 async def test_token_bucket_allows_immediate_acquire_within_capacity():
@@ -40,3 +45,22 @@ async def test_groq_rate_limiter_blocks_on_the_tightest_bucket():
     start = time.monotonic()
     await limiter.acquire(15)  # needs 5 more tokens at 10/s -> ~0.5s wait
     assert time.monotonic() - start >= 0.3
+
+
+def test_get_rate_limiter_for_key_gives_distinct_limiters_per_key():
+    """A key GroqKeyPool just rotated to has its own, untouched daily/per-
+    minute budget on Groq's side -- it must not inherit the old key's
+    already-drained bucket state."""
+    limiter_a = get_rate_limiter_for_key("key-a")
+    limiter_b = get_rate_limiter_for_key("key-b")
+    assert limiter_a is not limiter_b
+
+
+def test_get_rate_limiter_for_key_reuses_the_same_limiter_for_the_same_key():
+    assert get_rate_limiter_for_key("key-c") is get_rate_limiter_for_key("key-c")
+
+
+def test_get_rate_limiter_for_key_falls_back_to_shared_limiter_for_empty_key():
+    from app.llm.rate_limiter import default_rate_limiter
+
+    assert get_rate_limiter_for_key("") is default_rate_limiter

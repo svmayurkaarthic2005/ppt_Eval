@@ -72,3 +72,18 @@ class GroqRateLimiter:
 
 # One shared limiter per process: Groq's limits are per-API-key, not per-call-site.
 default_rate_limiter = GroqRateLimiter()
+
+_limiters_by_key: dict[str, GroqRateLimiter] = {}
+
+
+def get_rate_limiter_for_key(api_key: str) -> GroqRateLimiter:
+    """A key rotated to by GroqKeyPool has its own, separate daily/per-minute
+    budget on Groq's side -- reusing default_rate_limiter's bucket after a
+    rotation would make the new key look as throttled as the exhausted one
+    it replaced, for no reason. Falls back to the shared limiter when no key
+    is given (keeps existing single-key callers' behavior unchanged)."""
+    if not api_key:
+        return default_rate_limiter
+    if api_key not in _limiters_by_key:
+        _limiters_by_key[api_key] = GroqRateLimiter()
+    return _limiters_by_key[api_key]

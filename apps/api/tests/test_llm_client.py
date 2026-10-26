@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -13,14 +14,17 @@ from app.llm.client import (
     _build_messages,
     _criterion_json_schema,
     _estimate_tokens,
+    _is_daily_quota_error,
     _section_json_schema,
     _validate_score,
     evaluate_criterion,
     evaluate_section,
     extract_visual_evidence,
+    post_with_backoff,
     render_visual_evidence_text,
     select_informative_slides,
 )
+from app.llm.key_pool import GroqKeyPool
 from app.models.schemas import SubmissionContext
 from app.rubric.builder import RubricCriterionForSubmission
 
@@ -178,7 +182,7 @@ async def test_evaluate_criterion_averages_scores_across_image_batches(monkeypat
     class _FakeSettings:
         groq_api_key = "test-key-not-real"
 
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
     criterion = RubricCriterionForSubmission(
         section_key="problem_understanding",
@@ -300,7 +304,7 @@ async def test_evaluate_section_scores_every_criterion_in_one_call(monkeypatch):
     class _FakeSettings:
         groq_api_key = "test-key-not-real"
 
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
     slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
     evaluations = await evaluate_section(
@@ -349,7 +353,7 @@ async def test_evaluate_section_flags_the_whole_section_when_a_key_is_missing(mo
     class _FakeSettings:
         groq_api_key = "test-key-not-real"
 
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
     slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
     evaluations = await evaluate_section(
@@ -377,7 +381,7 @@ async def test_evaluate_section_handles_empty_choices_without_crashing(monkeypat
     class _FakeSettings:
         groq_api_key = "test-key-not-real"
 
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
     slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
     evaluations = await evaluate_section(
@@ -439,7 +443,7 @@ async def test_evaluate_section_makes_exactly_one_call_regardless_of_image_count
     class _FakeSettings:
         groq_api_key = "test-key-not-real"
 
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
     # Many image-bearing slides -- would have been several image batches
     # under the old per-section image-batching design.
@@ -474,7 +478,7 @@ async def test_evaluate_section_handles_non_string_content_without_crashing(monk
     class _FakeSettings:
         groq_api_key = "test-key-not-real"
 
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
     slides = [EvidenceSlide(slide_number=1, raw_text="slide 1", image_bytes=None)]
     evaluations = await evaluate_section(
@@ -565,7 +569,7 @@ async def test_extract_visual_evidence_makes_one_call_for_selected_slides(monkey
     class _FakeSettings:
         groq_api_key = "test-key-not-real"
 
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
     slides = [
         EvidenceSlide(slide_number=4, raw_text="workflow slide", image_bytes=b"x", classified_role="workflow"),
@@ -608,7 +612,7 @@ async def test_extract_visual_evidence_marks_partial_when_slides_were_dropped():
 
     with (
         unittest.mock.patch("app.llm.client.post_with_backoff", fake_post_with_backoff),
-        unittest.mock.patch("app.llm.client.get_settings", lambda: type("S", (), {"groq_api_key": "k"})()),
+        unittest.mock.patch("app.llm.client.get_key_pool", lambda: GroqKeyPool(["k"])),
     ):
         slides = [EvidenceSlide(slide_number=1, raw_text="t", image_bytes=b"x")]
         evidence = await extract_visual_evidence(_FakeConn(), uuid4(), slides, total_image_slides=5)
@@ -646,3 +650,108 @@ def test_render_visual_evidence_text_includes_slide_numbers_and_observations():
     assert "A workflow diagram." in rendered
     assert "Chart axis labels are illegible." in rendered
     assert "Deck claims 2s latency" in rendered
+
+
+def test_is_daily_quota_error_matches_tpd_message():
+    text = (
+        '{"error":{"message":"Rate limit reached ... on tokens per day (TPD): '
+        'Limit 200000, Used 199899, Requested 2644.","type":"tokens"}}'
+    )
+    assert _is_daily_quota_error(text) is True
+
+
+def test_is_daily_quota_error_does_not_match_per_minute_message():
+    text = (
+        '{"error":{"message":"Rate limit reached ... on tokens per minute (TPM): '
+        'Limit 8000, Used 5490, Requested 4618.","type":"tokens"}}'
+    )
+    assert _is_daily_quota_error(text) is False
+
+
+def test_is_daily_quota_error_does_not_match_unrelated_text():
+    assert _is_daily_quota_error("internal server error") is False
+
+
+class _FakeAsyncClient:
+    """Minimal stand-in for httpx.AsyncClient.post -- returns the next
+    canned response/exception from `responses` on each call and records the
+    Authorization header each call actually used."""
+
+    def __init__(self, responses: list[httpx.Response]):
+        self._responses = iter(responses)
+        self.auth_headers_seen: list[str] = []
+
+    async def post(self, url, headers=None, json=None):
+        self.auth_headers_seen.append(headers["Authorization"])
+        return next(self._responses)
+
+
+def _groq_response(status_code: int, body: dict) -> httpx.Response:
+    import json as _json
+
+    return httpx.Response(
+        status_code, content=_json.dumps(body), request=httpx.Request("POST", "https://api.groq.com")
+    )
+
+
+async def test_post_with_backoff_rotates_key_on_daily_quota_429():
+    tpd_error = {
+        "error": {
+            "message": "Rate limit reached ... on tokens per day (TPD): Limit 200000, Used 199899, Requested 2644.",
+            "type": "tokens",
+        }
+    }
+    responses = [
+        _groq_response(429, tpd_error),  # key-a: daily quota exhausted
+        _groq_response(200, {"choices": [{"message": {"content": "ok"}}]}),  # key-b: succeeds
+    ]
+    fake_client = _FakeAsyncClient(responses)
+    pool = GroqKeyPool(["key-a", "key-b"])
+
+    response = await post_with_backoff(fake_client, {"model": "x"}, pool)
+
+    assert response.status_code == 200
+    assert fake_client.auth_headers_seen == ["Bearer key-a", "Bearer key-b"]
+    assert pool.current == "key-b"  # rotation persists for subsequent calls
+
+
+async def test_post_with_backoff_does_not_rotate_on_a_per_minute_429(monkeypatch):
+    """A TPM/ITPM 429 recovers on its own in under a minute -- rotating keys
+    for it would just shift load around. It must retry the SAME key."""
+    monkeypatch.setattr("app.llm.client.NETWORK_BACKOFF_BASE_SECONDS", 0.0)
+
+    async def fake_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr("app.llm.client.asyncio.sleep", fake_sleep)
+
+    tpm_error = {
+        "error": {
+            "message": "Rate limit reached ... on tokens per minute (TPM): Limit 8000, Used 7900, Requested 500.",
+            "type": "tokens",
+        }
+    }
+    responses = [
+        _groq_response(429, tpm_error),
+        _groq_response(200, {"choices": [{"message": {"content": "ok"}}]}),
+    ]
+    fake_client = _FakeAsyncClient(responses)
+    pool = GroqKeyPool(["key-a", "key-b"])
+
+    response = await post_with_backoff(fake_client, {"model": "x"}, pool)
+
+    assert response.status_code == 200
+    assert fake_client.auth_headers_seen == ["Bearer key-a", "Bearer key-a"]
+    assert pool.current == "key-a"  # never rotated
+
+
+async def test_post_with_backoff_accepts_a_plain_string_key():
+    """Backward-compat path: a caller with no rotation needs can still pass
+    a bare string instead of a GroqKeyPool."""
+    responses = [_groq_response(200, {"choices": [{"message": {"content": "ok"}}]})]
+    fake_client = _FakeAsyncClient(responses)
+
+    response = await post_with_backoff(fake_client, {"model": "x"}, "a-plain-key")
+
+    assert response.status_code == 200
+    assert fake_client.auth_headers_seen == ["Bearer a-plain-key"]

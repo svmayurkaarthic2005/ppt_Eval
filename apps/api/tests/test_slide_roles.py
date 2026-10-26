@@ -1,6 +1,7 @@
 import httpx
 
 from app.extraction.slide_roles import classify_by_keywords, classify_with_llm
+from app.llm.key_pool import GroqKeyPool
 from app.models.schemas import SlideRole
 
 
@@ -33,8 +34,8 @@ async def test_classify_with_llm_requests_enough_tokens_for_reasoning_models(mon
 
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
     monkeypatch.setattr(
-        "app.extraction.slide_roles.get_settings",
-        lambda: type("S", (), {"groq_api_key": "fake-key"})(),
+        "app.extraction.slide_roles.get_key_pool",
+        lambda: GroqKeyPool(["fake-key"]),
     )
 
     result = await classify_with_llm("Our Approach", "We use anomaly detection")

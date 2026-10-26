@@ -13,7 +13,7 @@ import logging
 
 import httpx
 
-from app.config import get_settings
+from app.llm.key_pool import get_key_pool
 from app.models.schemas import SlideRole
 
 logger = logging.getLogger("hackeval.extraction.slide_roles")
@@ -111,8 +111,8 @@ def classify_by_keywords(title: str) -> SlideRole | None:
 
 
 async def classify_with_llm(title: str, raw_text: str) -> SlideRole:
-    settings = get_settings()
-    if not settings.groq_api_key:
+    pool = get_key_pool()
+    if not len(pool):
         return SlideRole.other
 
     valid_roles = ", ".join(role.value for role in SlideRole)
@@ -127,7 +127,7 @@ async def classify_with_llm(title: str, raw_text: str) -> SlideRole:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                headers={"Authorization": f"Bearer {pool.current}"},
                 json={
                     "model": GROQ_MODEL,
                     "messages": [{"role": "user", "content": prompt}],

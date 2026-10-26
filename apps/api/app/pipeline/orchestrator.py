@@ -35,7 +35,6 @@ import httpx
 
 from app.calibration.reliability import compute_and_store_reliability_label
 from app.comparison import invalidate_for_submission
-from app.config import get_settings
 from app.llm.client import (
     GROQ_MODEL,
     EvidenceSlide,
@@ -45,8 +44,9 @@ from app.llm.client import (
     render_visual_evidence_text,
     select_informative_slides,
 )
+from app.llm.key_pool import get_key_pool
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
-from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter
+from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter, get_rate_limiter_for_key
 from app.models.schemas import SubmissionContext
 from app.rubric.builder import build_rubric
 from app.scoring.engine import finalize_submission_if_complete
@@ -219,12 +219,13 @@ async def _call_stage1_llm(
     submission_context: SubmissionContext | None = None,
     problem_statement_text: str = "",
 ) -> dict:
-    settings = get_settings()
-    if not settings.groq_api_key:
+    pool = get_key_pool()
+    if not len(pool):
         raise RuntimeError("GROQ_API_KEY is not configured")
 
     estimated_tokens = len(text_context) // 4 + 300
     await rate_limiter.acquire(estimated_tokens)
+    await get_rate_limiter_for_key(pool.current).acquire(estimated_tokens)
 
     context_text = (
         f"Problem domain: {submission_context.problem_domain}\n"
@@ -263,7 +264,7 @@ async def _call_stage1_llm(
         },
     }
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await post_with_backoff(client, payload, settings.groq_api_key)
+        response = await post_with_backoff(client, payload, pool)
     return response.json()
 
 

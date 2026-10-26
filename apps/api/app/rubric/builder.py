@@ -16,7 +16,7 @@ from uuid import UUID
 import asyncpg
 import httpx
 
-from app.config import get_settings
+from app.llm.key_pool import get_key_pool
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
 from app.models.schemas import SubmissionContext
 
@@ -126,15 +126,15 @@ def _parse_submission_context(raw: dict) -> SubmissionContext:
 
 
 async def _call_groq_for_context(problem_statement_text: str) -> dict:
-    settings = get_settings()
-    if not settings.groq_api_key:
+    pool = get_key_pool()
+    if not len(pool):
         raise SubmissionContextUnavailableError("GROQ_API_KEY is not configured")
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                headers={"Authorization": f"Bearer {pool.current}"},
                 json={
                     "model": GROQ_CONTEXT_MODEL,
                     "temperature": 0,

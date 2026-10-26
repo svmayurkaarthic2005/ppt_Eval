@@ -9,8 +9,8 @@ from urllib.parse import quote_plus
 import httpx
 from pydantic import BaseModel, Field, model_validator
 
-from app.config import get_settings
 from app.llm.client import FALLBACK_TEXT_MODEL, GROQ_MODEL, post_with_backoff
+from app.llm.key_pool import get_key_pool
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
 from app.models.schemas import SubmissionContext
 
@@ -634,14 +634,14 @@ async def generate_cost_analysis(
     """Evaluates the project's Bill of Materials (BOM), detects all chemical reagents, process equipment,
     hardware, and environmental compliance items required to implement the stated solution, verifies
     declared costs against market benchmarks in Indian Rupees (INR ₹), and calculates true project cost and affordability."""
-    settings = get_settings()
+    pool = get_key_pool()
     scope = classify_project_scope(context, problem_statement_text, deck_text)
 
     # A software-first project should not be evaluated by the physical BOM prompt.
     if scope == "software_only":
         return _software_cost_analysis(context=context, deck_text=deck_text)
 
-    if not settings.groq_api_key:
+    if not len(pool):
         logger.warning("GROQ_API_KEY missing; returning non-fabricated incomplete review status.")
         return _fallback_cost_analysis(deck_text, "INR", scope, "GROQ_API_KEY is not configured")
 
@@ -722,7 +722,7 @@ async def generate_cost_analysis(
 
     try:
         async with httpx.AsyncClient(timeout=40.0) as client:
-            response = await post_with_backoff(client, payload, settings.groq_api_key)
+            response = await post_with_backoff(client, payload, pool)
         data = response.json()
         raw_content = data["choices"][0]["message"]["content"]
         parsed = json.loads(raw_content)
@@ -733,7 +733,7 @@ async def generate_cost_analysis(
         payload["model"] = FALLBACK_TEXT_MODEL
         try:
             async with httpx.AsyncClient(timeout=40.0) as client:
-                response = await post_with_backoff(client, payload, settings.groq_api_key)
+                response = await post_with_backoff(client, payload, pool)
             data = response.json()
             raw_content = data["choices"][0]["message"]["content"]
             parsed = json.loads(raw_content)

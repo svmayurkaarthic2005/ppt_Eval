@@ -23,6 +23,7 @@ from uuid import uuid4
 import pytest
 
 from app.llm.client import EvidenceSlide, evaluate_criterion
+from app.llm.key_pool import GroqKeyPool
 from app.llm.prompt_safety import detect_injection_patterns
 from app.models.schemas import SubmissionContext
 from app.rubric.builder import RubricCriterionForSubmission
@@ -81,11 +82,7 @@ def stub_groq(monkeypatch):
         return _FakeResponse(_canned_groq_payload(score=2, max_score=2))
 
     monkeypatch.setattr("app.llm.client.post_with_backoff", fake_post_with_backoff)
-
-    class _FakeSettings:
-        groq_api_key = "test-key-not-real"
-
-    monkeypatch.setattr("app.llm.client.get_settings", lambda: _FakeSettings())
+    monkeypatch.setattr("app.llm.client.get_key_pool", lambda: GroqKeyPool(["test-key-not-real"]))
 
 
 def _criterion() -> RubricCriterionForSubmission:

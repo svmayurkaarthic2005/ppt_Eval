@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     )
 
     groq_api_key: str = ""
+    groq_api_key_2: str = ""
     supabase_url: str = ""
     supabase_service_role_key: str = ""
     supabase_anon_key: str = ""

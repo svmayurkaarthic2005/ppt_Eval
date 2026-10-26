@@ -23,10 +23,10 @@ import asyncpg
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from app.config import get_settings
 from app.llm.client import GROQ_MODEL, post_with_backoff
+from app.llm.key_pool import get_key_pool
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
-from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter
+from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter, get_rate_limiter_for_key
 
 logger = logging.getLogger("hackeval.validation.cross_modal")
 
@@ -131,11 +131,12 @@ def _estimate_tokens(messages: list[dict]) -> int:
 
 
 async def _call_groq(messages: list[dict], estimated_tokens: int, rate_limiter: GroqRateLimiter) -> dict:
-    settings = get_settings()
-    if not settings.groq_api_key:
+    pool = get_key_pool()
+    if not len(pool):
         raise CrossModalCheckUnavailableError("GROQ_API_KEY is not configured")
 
     await rate_limiter.acquire(estimated_tokens)
+    await get_rate_limiter_for_key(pool.current).acquire(estimated_tokens)
 
     payload = {
         "model": GROQ_MODEL,
@@ -152,7 +153,7 @@ async def _call_groq(messages: list[dict], estimated_tokens: int, rate_limiter: 
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await post_with_backoff(client, payload, settings.groq_api_key)
+        response = await post_with_backoff(client, payload, pool)
     return response.json()
 
 

@@ -23,9 +23,9 @@ import asyncpg
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from app.config import get_settings
+from app.llm.key_pool import GroqKeyPool, get_key_pool
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
-from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter
+from app.llm.rate_limiter import GroqRateLimiter, default_rate_limiter, get_rate_limiter_for_key
 from app.models.schemas import SubmissionContext
 from app.rubric.builder import RubricCriterionForSubmission, render_evaluation_context
 
@@ -498,15 +498,31 @@ def _estimate_tokens(text_context: str, image_count: int) -> int:
     )
 
 
+def _is_daily_quota_error(error_text: str) -> bool:
+    """Distinguishes a daily-quota 429 (TPD/RPD -- won't recover for hours)
+    from a per-minute one (TPM/ITPM/RPM -- recovers on its own in under a
+    minute, where the existing backoff-and-retry-the-same-key behavior is
+    already correct and rotating keys would just shift load for no reason)."""
+    lowered = error_text.lower()
+    return "(tpd)" in lowered or "(rpd)" in lowered or "per day" in lowered
+
+
 async def post_with_backoff(
-    client: httpx.AsyncClient, payload: dict, api_key: str
+    client: httpx.AsyncClient, payload: dict, api_key_pool: GroqKeyPool | str
 ) -> httpx.Response:
+    """Accepts either a GroqKeyPool (the normal case -- lets a daily-quota
+    429 rotate to the next key and retry immediately) or a plain string for
+    callers that don't need rotation (e.g. a one-off call with an explicit
+    key)."""
+    pool = api_key_pool if isinstance(api_key_pool, GroqKeyPool) else GroqKeyPool([api_key_pool])
+
     last_exc: Exception | None = None
     for attempt in range(MAX_NETWORK_RETRIES):
+        current_key = pool.current
         try:
             response = await client.post(
                 GROQ_CHAT_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers={"Authorization": f"Bearer {current_key}"},
                 json=payload,
             )
         except httpx.HTTPError as exc:
@@ -525,6 +541,12 @@ async def post_with_backoff(
                 request=response.request,
                 response=response,
             )
+            if (
+                response.status_code == 429
+                and _is_daily_quota_error(response.text)
+                and pool.mark_exhausted(current_key)
+            ):
+                continue  # fresh key, fresh quota -- retry now, no backoff wait
 
         retry_after = 0.0
         if isinstance(last_exc, httpx.HTTPStatusError):
@@ -556,11 +578,16 @@ async def _call_groq(
     estimated_tokens: int,
     rate_limiter: GroqRateLimiter,
 ) -> dict:
-    settings = get_settings()
-    if not settings.groq_api_key:
+    pool = get_key_pool()
+    if not len(pool):
         raise RuntimeError("GROQ_API_KEY is not configured")
 
+    # The caller-supplied limiter throttles overall call volume (its
+    # existing purpose); the per-key limiter additionally tracks each key's
+    # own budget separately, so a key GroqKeyPool just rotated to isn't
+    # throttled based on the exhausted key's usage.
     await rate_limiter.acquire(estimated_tokens)
+    await get_rate_limiter_for_key(pool.current).acquire(estimated_tokens)
 
     global _vision_disabled_until
 
@@ -590,7 +617,7 @@ async def _call_groq(
             },
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await post_with_backoff(client, fallback_payload, settings.groq_api_key)
+            response = await post_with_backoff(client, fallback_payload, pool)
         return response.json()
 
     payload = {
@@ -605,7 +632,7 @@ async def _call_groq(
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await post_with_backoff(client, payload, settings.groq_api_key)
+            response = await post_with_backoff(client, payload, pool)
         return response.json()
     except Exception as exc:  # noqa: BLE001
         if "429" in str(exc) or "rate_limit" in str(exc).lower():
@@ -626,7 +653,7 @@ async def _call_groq(
             },
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await post_with_backoff(client, fallback_payload, settings.groq_api_key)
+            response = await post_with_backoff(client, fallback_payload, pool)
         return response.json()
 
 
