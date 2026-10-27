@@ -218,8 +218,8 @@ export default function Upload() {
     <main className="flex flex-col items-center bg-gradient-to-br from-indigo-50 via-white to-slate-100 px-4 py-12">
       <div className="w-full max-w-[640px]">
         <div className="mb-6 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200 mb-2">
-            🌱 Environmental & Chemical Engineering Hackathon
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200/70 mb-2">
+            Environmental & Chemical Engineering Hackathon
           </span>
           <h1 className="text-2xl font-bold text-slate-900">
             Submit your pitch deck

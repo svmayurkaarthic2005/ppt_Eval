@@ -32,14 +32,9 @@ export default function Layout() {
               </svg>
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold tracking-tight text-slate-900 text-lg group-hover:text-indigo-600 transition">
-                  HackEval
-                </span>
-                <span className="hidden rounded-full bg-indigo-100/90 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-700 sm:inline-flex">
-                  AI + S2
-                </span>
-              </div>
+              <span className="font-extrabold tracking-tight text-slate-900 text-lg group-hover:text-indigo-600 transition">
+                HackEval
+              </span>
               <p className="hidden text-[11px] font-medium text-slate-600 -mt-0.5 sm:block">
                 Automated Hackathon Jury
               </p>

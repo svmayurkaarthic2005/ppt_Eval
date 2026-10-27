@@ -741,15 +741,12 @@ export default function Home() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200/60 pb-6">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100/90 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-300/60">
-              🌱 Environmental & Chemical Engineering Hackathon
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200/70">
+              Environmental & Chemical Engineering Hackathon
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100/80 px-3 py-1 text-xs font-bold text-indigo-700">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
-              Live Tournament Standings
-            </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 border border-slate-200/50">
-              BOM & Academic Benchmark Integrated
+              Live Standings
             </span>
           </div>
           <h1 className="mt-2 text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">

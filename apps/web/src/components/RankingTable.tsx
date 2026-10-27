@@ -10,30 +10,20 @@ const RELIABILITY_COLORS: Record<ReliabilityLabel, string> = {
   REVIEW: "bg-rose-50 text-rose-700 border border-rose-200/80",
 };
 
+const TOP_RANK_STYLES: Record<number, string> = {
+  1: "bg-gradient-to-br from-amber-400 to-yellow-500 text-amber-950 shadow-sm shadow-amber-500/30",
+  2: "bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900 shadow-sm",
+  3: "bg-gradient-to-br from-amber-600 to-orange-700 text-white shadow-sm shadow-amber-700/20",
+};
+
 function RankBadge({ rank }: { rank: number }) {
-  if (rank === 1) {
-    return (
-      <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 text-xs font-black text-amber-950 shadow-sm shadow-amber-500/30">
-        🥇
-      </span>
-    );
-  }
-  if (rank === 2) {
-    return (
-      <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-slate-200 to-slate-400 text-xs font-black text-slate-900 shadow-sm">
-        🥈
-      </span>
-    );
-  }
-  if (rank === 3) {
-    return (
-      <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-br from-amber-600 to-orange-700 text-xs font-black text-white shadow-sm shadow-amber-700/20">
-        🥉
-      </span>
-    );
-  }
+  const topStyle = TOP_RANK_STYLES[rank];
   return (
-    <span className="inline-flex h-7 w-7 items-center justify-center rounded-xl bg-slate-100 text-xs font-bold text-slate-600 border border-slate-200/60">
+    <span
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-xl text-xs font-black ${
+        topStyle ?? "bg-slate-100 font-bold text-slate-600 border border-slate-200/60"
+      }`}
+    >
       #{rank}
     </span>
   );
