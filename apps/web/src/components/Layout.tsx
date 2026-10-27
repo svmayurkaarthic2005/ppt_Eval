@@ -3,17 +3,17 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { signOutAdmin } from "../lib/supabaseClient";
 import { useAdminAuth } from "../lib/useAdminAuth";
 
-const NAV_LINKS = [
-  { to: "/", label: "Leaderboard & Rankings", end: true },
-  { to: "/upload", label: "Upload Deck" },
+const NAV_LINKS = [{ to: "/", label: "Leaderboard & Rankings", end: true }];
+
+const ADMIN_NAV_LINKS = [
+  { to: "/upload", label: "Upload Deck", end: false },
+  { to: "/admin/calibration", label: "Human Calibration", end: false },
 ];
 
 export default function Layout() {
   const { isAdmin, email } = useAdminAuth();
   const navigate = useNavigate();
-  const navLinks = isAdmin
-    ? [...NAV_LINKS, { to: "/admin/calibration", label: "Human Calibration", end: false }]
-    : NAV_LINKS;
+  const navLinks = isAdmin ? [...NAV_LINKS, ...ADMIN_NAV_LINKS] : NAV_LINKS;
 
   async function handleLogout() {
     await signOutAdmin();

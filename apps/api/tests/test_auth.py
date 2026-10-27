@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.auth import get_current_admin_id, get_current_user_id
+from app.auth import get_current_admin_id
 
 
 def _client_returning(user_id: str | None):
@@ -24,49 +24,6 @@ def _client_returning_role(user_id: str, role: str | None):
     response.user.app_metadata = {"role": role} if role else {}
     client.auth.get_user.return_value = response
     return client
-
-
-@pytest.mark.asyncio
-async def test_get_current_user_id_returns_user_id_for_valid_token():
-    with patch("app.auth.get_service_client", return_value=_client_returning("user-123")):
-        user_id = await get_current_user_id(authorization="Bearer good-token")
-
-    assert user_id == "user-123"
-
-
-@pytest.mark.asyncio
-async def test_get_current_user_id_rejects_missing_bearer_prefix():
-    with pytest.raises(HTTPException) as exc_info:
-        await get_current_user_id(authorization="not-a-bearer-token")
-
-    assert exc_info.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_get_current_user_id_rejects_when_supabase_returns_no_response():
-    with (
-        patch("app.auth.get_service_client", return_value=_client_returning(None)),
-        pytest.raises(HTTPException) as exc_info,
-    ):
-        await get_current_user_id(authorization="Bearer expired-token")
-
-    assert exc_info.value.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_get_current_user_id_rejects_when_response_has_no_user():
-    client = MagicMock()
-    response = MagicMock()
-    response.user = None
-    client.auth.get_user.return_value = response
-
-    with (
-        patch("app.auth.get_service_client", return_value=client),
-        pytest.raises(HTTPException) as exc_info,
-    ):
-        await get_current_user_id(authorization="Bearer revoked-token")
-
-    assert exc_info.value.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -109,5 +66,21 @@ async def test_get_current_admin_id_rejects_when_supabase_returns_no_response():
         pytest.raises(HTTPException) as exc_info,
     ):
         await get_current_admin_id(authorization="Bearer expired-token")
+
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_current_admin_id_rejects_when_response_has_no_user():
+    client = MagicMock()
+    response = MagicMock()
+    response.user = None
+    client.auth.get_user.return_value = response
+
+    with (
+        patch("app.auth.get_service_client", return_value=client),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await get_current_admin_id(authorization="Bearer revoked-token")
 
     assert exc_info.value.status_code == 401

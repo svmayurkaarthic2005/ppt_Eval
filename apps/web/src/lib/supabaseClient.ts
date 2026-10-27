@@ -5,8 +5,11 @@ export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY,
 );
 
-/** Every team needs a stable auth.users id to own its rows under RLS; an
- * anonymous Supabase session gives it one without building a login flow. */
+/** Returns the current session's token -- the admin's, once signed in via
+ * signInAdmin. Every caller of this is behind an isAdmin-gated UI, so this
+ * should always find an existing admin session; the anonymous fallback is
+ * just defensive (the backend would reject an anon token as non-admin
+ * anyway). */
 export async function getAccessToken(): Promise<string> {
   const { data } = await supabase.auth.getSession();
   if (data.session) return data.session.access_token;

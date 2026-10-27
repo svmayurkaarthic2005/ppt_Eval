@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.auth import get_current_admin_id, get_current_user_id
+from app.auth import get_current_admin_id
 from app.comparison import (
     ComparisonResponse,
     RubricVersionMismatchError,
@@ -129,7 +129,7 @@ async def create_submission(
     problem_statement_text: str | None = Form(None),
     problem_statement_id: str | None = Form(None),
     pptx: UploadFile = File(...),
-    owner_user_id: str = Depends(get_current_user_id),
+    owner_user_id: str = Depends(get_current_admin_id),
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> Submission:
     existing_ps_id: UUID | None = None

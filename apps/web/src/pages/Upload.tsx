@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 
 import Dropzone from "../components/Dropzone";
 import { useConfirm } from "../components/ConfirmDialog";
@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import type { ProblemStatementInput } from "../lib/api";
 import { estimateRemaining } from "../lib/timing";
+import { useAdminAuth } from "../lib/useAdminAuth";
 import type { ProblemStatement, Submission, SubmissionAudit, SubmissionStatus } from "@hackeval/types";
 
 const PS_EXTENSIONS = ["pdf", "docx", "txt"];
@@ -54,6 +55,7 @@ function ProgressSteps({ step }: { step: 1 | 2 | 3 | 4 }) {
 }
 
 export default function Upload() {
+  const { isAdmin, loading: authLoading } = useAdminAuth();
   const confirm = useConfirm();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
@@ -208,6 +210,9 @@ export default function Upload() {
       clearInterval(interval);
     };
   }, [submission?.id, submission?.status]);
+
+  if (authLoading) return null;
+  if (!isAdmin) return <Navigate to="/login" replace />;
 
   return (
     <main className="flex flex-col items-center bg-gradient-to-br from-indigo-50 via-white to-slate-100 px-4 py-12">

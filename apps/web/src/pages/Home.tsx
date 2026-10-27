@@ -93,12 +93,14 @@ function EmptyState({
   actionText = "Upload Deck to Begin",
   actionTo = "/upload",
   onActionClick,
+  showAction = true,
 }: {
   title?: string;
   message: string;
   actionText?: string;
   actionTo?: string;
   onActionClick?: () => void;
+  showAction?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 bg-white/70 py-16 px-4 text-center">
@@ -119,22 +121,23 @@ function EmptyState({
       </div>
       <h3 className="text-base font-semibold text-slate-800">{title}</h3>
       <p className="text-sm text-slate-500 max-w-sm">{message}</p>
-      {onActionClick ? (
-        <button
-          type="button"
-          onClick={onActionClick}
-          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
-        >
-          {actionText}
-        </button>
-      ) : (
-        <Link
-          to={actionTo}
-          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
-        >
-          {actionText}
-        </Link>
-      )}
+      {showAction &&
+        (onActionClick ? (
+          <button
+            type="button"
+            onClick={onActionClick}
+            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
+          >
+            {actionText}
+          </button>
+        ) : (
+          <Link
+            to={actionTo}
+            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
+          >
+            {actionText}
+          </Link>
+        ))}
     </div>
   );
 }
@@ -780,18 +783,18 @@ export default function Home() {
                 </svg>
                 Remove Problem Statement
               </button>
+
+              <Link
+                to="/upload"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Upload Deck
+              </Link>
             </>
           )}
-
-          <Link
-            to="/upload"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            Upload Deck
-          </Link>
         </div>
       </div>
 
@@ -922,7 +925,7 @@ export default function Home() {
 
       {/* View 1: Overall Standings */}
       {!loading && view === "overall" && overall!.length === 0 && (
-        <EmptyState message="No submissions have completed scoring yet." />
+        <EmptyState message="No submissions have completed scoring yet." showAction={isAdmin} />
       )}
 
       {!loading && view === "overall" && overall!.length > 0 && (
@@ -943,6 +946,7 @@ export default function Home() {
           message="Create a problem statement or upload a presentation to generate domain rankings."
           actionText="Add Problem Statement"
           onActionClick={() => setIsAddModalOpen(true)}
+          showAction={isAdmin}
         />
       )}
 
@@ -984,15 +988,17 @@ export default function Home() {
               </div>
 
               <div className="flex items-center gap-2 self-end sm:self-auto">
-                <Link
-                  to="/upload"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Upload Deck
-                </Link>
+                {isAdmin && (
+                  <Link
+                    to="/upload"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Upload Deck
+                  </Link>
+                )}
                 {isAdmin && (
                   <button
                     type="button"
