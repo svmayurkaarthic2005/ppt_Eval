@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import RankingTable from "../components/RankingTable";
 import { useConfirm } from "../components/ConfirmDialog";
+import { downloadCsv, rankingRowsToCsv } from "../lib/csv";
 import {
   ApiError,
   createProblemStatement,
@@ -683,6 +684,20 @@ export default function Home() {
     navigate(`/compare?ids=${Array.from(selected).join(",")}`);
   }
 
+  function handleDownloadCsv() {
+    if (view === "overall") {
+      const csv = rankingRowsToCsv(overall ?? [], overallSectionKeys, false);
+      downloadCsv(csv, "hackeval-leaderboard-overall.csv");
+    } else {
+      const rows = (groups ?? []).flatMap((g) =>
+        g.submissions.map((row) => ({ ...row, problem_statement: g.title })),
+      );
+      const sectionKeys = sectionKeysOf(rows);
+      const csv = rankingRowsToCsv(rows, sectionKeys, true);
+      downloadCsv(csv, "hackeval-leaderboard-by-problem-statement.csv");
+    }
+  }
+
   const overallSectionKeys = useMemo(() => sectionKeysOf(overall ?? []), [overall]);
   const loading = overall === null || groups === null;
 
@@ -878,6 +893,19 @@ export default function Home() {
             </button>
           ))}
         </div>
+
+        {!loading && (
+          <button
+            type="button"
+            onClick={handleDownloadCsv}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />
+            </svg>
+            Download CSV
+          </button>
+        )}
       </div>
 
       {loading && <TableSkeleton />}
