@@ -182,7 +182,7 @@ function SubmissionSlidesViewer({ slides }: { slides: SubmissionSlides }) {
                 d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"
               />
             </svg>
-            Download .pptx
+            Download {slides.pptx_download_url.toLowerCase().includes(".pdf") ? ".pdf" : ".pptx"}
           </a>
         )}
       </div>

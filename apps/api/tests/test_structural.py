@@ -1,10 +1,18 @@
 import io
 
+import pymupdf
 import pytest
 from pptx import Presentation
 
 from app.extraction.slide_roles import classify_by_keywords
-from app.extraction.structural import PptxCorruptError, parse_numeric_cell, parse_pptx
+from app.extraction.structural import (
+    PdfCorruptError,
+    PptxCorruptError,
+    _detect_deck_type,
+    parse_numeric_cell,
+    parse_pdf,
+    parse_pptx,
+)
 from app.models.schemas import SlideRole
 
 
@@ -117,3 +125,56 @@ def test_classify_by_keywords_matches_expected_role(title, expected):
 def test_classify_by_keywords_returns_none_when_ambiguous_or_no_match():
     assert classify_by_keywords("Thank You!") is None
     assert classify_by_keywords("") is None
+
+
+def _build_pdf(pages_text: list[str]) -> bytes:
+    doc = pymupdf.open()
+    for text in pages_text:
+        page = doc.new_page()
+        page.insert_text((50, 50), text)
+    bytes_data = doc.tobytes()
+    doc.close()
+    return bytes_data
+
+
+def test_parses_pdf_deck():
+    pdf_bytes = _build_pdf([
+        "Problem Statement\nOur core problem is high latency.",
+        "Proposed Solution\nWe build an edge cache.",
+        "System Architecture\nDetails of the architecture.",
+    ])
+    slides = parse_pdf(pdf_bytes)
+
+    assert len(slides) == 3
+    assert [s.slide_number for s in slides] == [1, 2, 3]
+    assert slides[0].title == "Problem Statement"
+    assert "Our core problem is high latency." in slides[0].raw_text
+    assert slides[0].shapes == []
+    assert slides[0].tables == []
+    assert slides[0].needs_visual_rendering is True
+
+    assert slides[1].title == "Proposed Solution"
+    assert slides[2].title == "System Architecture"
+
+
+def test_corrupt_pdf_raises_pdf_corrupt_error():
+    with pytest.raises(PdfCorruptError):
+        parse_pdf(b"not a valid pdf header")
+
+
+def test_empty_pdf_raises_pdf_corrupt_error():
+    zero_page_pdf = b"%PDF-1.4\n1 0 obj\n<<\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF"
+    with pytest.raises(PdfCorruptError):
+        parse_pdf(zero_page_pdf)
+
+    with pytest.raises(PdfCorruptError):
+        parse_pdf(b"")
+
+
+def test_detect_deck_type():
+    assert _detect_deck_type("sub-123/original.pdf") == "pdf"
+    assert _detect_deck_type("sub-123/original.PDF") == "pdf"
+    assert _detect_deck_type("sub-123/original.pptx") == "pptx"
+    assert _detect_deck_type("sub-123/original.PPTX") == "pptx"
+    assert _detect_deck_type("sub-123/original") == "pptx"
+

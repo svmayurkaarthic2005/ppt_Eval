@@ -228,93 +228,117 @@ async def render_submission_slides(conn: asyncpg.Connection, submission_id: UUID
         await _advance_to_rubric_build(conn, submission_id)
         return
 
-    pptx_bytes = get_service_client().storage.from_("pptx-uploads").download(
+    deck_bytes = get_service_client().storage.from_("pptx-uploads").download(
         submission["pptx_storage_path"]
     )
 
-    try:
-        presentation = Presentation(io.BytesIO(pptx_bytes))
-    except _PPTX_OPEN_ERRORS as exc:
-        # Phase 3 should already have caught an unopenable deck; defensive fallback.
-        await _flag_rendering_unavailable(conn, submission_id, f"Could not reopen .pptx: {exc}.")
-        await _advance_to_rubric_build(conn, submission_id)
-        return
+    # Detect deck type from storage path extension
+    storage_path = submission["pptx_storage_path"]
+    deck_ext = storage_path.rsplit(".", 1)[-1].lower() if "." in storage_path else "pptx"
+    is_pdf_deck = deck_ext == "pdf"
 
     needed_numbers = [row["slide_number"] for row in needed_rows]
-    hashes_by_number = {
-        n: hash_slide_xml(presentation.slides[n - 1])
-        for n in needed_numbers
-        if n - 1 < len(presentation.slides)
-    }
-
-    cached_rows = await conn.fetch(
-        "select content_hash, storage_path from rendered_slide_cache where content_hash = any($1::text[])",
-        list(set(hashes_by_number.values())),
-    )
-    cached_paths = {row["content_hash"]: row["storage_path"] for row in cached_rows}
-    
     storage = get_service_client().storage.from_("rendered-slides")
     rendered_paths: dict[int, str] = {}
-    cache_misses: dict[int, str] = {}
 
-    # Attempt to copy cached renders first
-    for slide_number, content_hash in hashes_by_number.items():
-        cached_path = cached_paths.get(content_hash)
-        if not cached_path:
-            cache_misses[slide_number] = content_hash
-            continue
-
-        path = f"{submission_id}/slide-{slide_number}.png"
+    if is_pdf_deck:
+        # PDF decks: rasterize pages directly, no LibreOffice conversion needed.
         try:
-            storage.copy(cached_path, path)
-            rendered_paths[slide_number] = path
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "submission %s: could not copy cached render from %s to %s (treating as cache miss): %s",
-                submission_id,
-                cached_path,
-                path,
-                exc,
-            )
-            # Stale cache pointer: purge from DB and re-render from PDF
-            await conn.execute("delete from rendered_slide_cache where content_hash = $1", content_hash)
-            cache_misses[slide_number] = content_hash
-
-    # Render any missing or un-cached slides
-    if cache_misses:
-        try:
-            pdf_bytes = await convert_pptx_to_pdf_bytes(pptx_bytes)
-        except (
-            SubprocessTimeoutError,
-            SubprocessFailedError,
-            SubprocessUnavailableError,
-            NotImplementedError,
-            FileNotFoundError,
-        ) as exc:
-            logger.warning("submission %s: rendering failed: %s", submission_id, exc)
-            await _flag_rendering_unavailable(conn, submission_id, f"LibreOffice conversion failed: {exc}.")
-            pdf_bytes = None
-
-        if pdf_bytes is not None:
-            with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+            with pymupdf.open(stream=deck_bytes, filetype="pdf") as pdf:
                 page_count = pdf.page_count
-            for slide_number, content_hash in cache_misses.items():
+            for slide_number in needed_numbers:
                 page_index = slide_number - 1
                 if page_index >= page_count:
-                    continue  # defensive: conversion produced fewer pages than slides
-                png_bytes = rasterize_page_to_png(pdf_bytes, page_index)
+                    continue
+                png_bytes = rasterize_page_to_png(deck_bytes, page_index)
                 path = f"{submission_id}/slide-{slide_number}.png"
                 storage.upload(path, png_bytes, {"content-type": "image/png", "upsert": "true"})
-                await conn.execute(
-                    """
-                    insert into rendered_slide_cache (content_hash, storage_path)
-                    values ($1, $2)
-                    on conflict (content_hash) do update set storage_path = excluded.storage_path
-                    """,
-                    content_hash,
-                    path,
-                )
                 rendered_paths[slide_number] = path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("submission %s: PDF rendering failed: %s", submission_id, exc)
+            await _flag_rendering_unavailable(conn, submission_id, f"PDF rasterization failed: {exc}.")
+    else:
+        # PPTX decks: existing path with LibreOffice conversion and caching.
+        try:
+            presentation = Presentation(io.BytesIO(deck_bytes))
+        except _PPTX_OPEN_ERRORS as exc:
+            # Phase 3 should already have caught an unopenable deck; defensive fallback.
+            await _flag_rendering_unavailable(conn, submission_id, f"Could not reopen .pptx: {exc}.")
+            await _advance_to_rubric_build(conn, submission_id)
+            return
+
+        hashes_by_number = {
+            n: hash_slide_xml(presentation.slides[n - 1])
+            for n in needed_numbers
+            if n - 1 < len(presentation.slides)
+        }
+
+        cached_rows = await conn.fetch(
+            "select content_hash, storage_path from rendered_slide_cache where content_hash = any($1::text[])",
+            list(set(hashes_by_number.values())),
+        )
+        cached_paths = {row["content_hash"]: row["storage_path"] for row in cached_rows}
+
+        cache_misses: dict[int, str] = {}
+
+        # Attempt to copy cached renders first
+        for slide_number, content_hash in hashes_by_number.items():
+            cached_path = cached_paths.get(content_hash)
+            if not cached_path:
+                cache_misses[slide_number] = content_hash
+                continue
+
+            path = f"{submission_id}/slide-{slide_number}.png"
+            try:
+                storage.copy(cached_path, path)
+                rendered_paths[slide_number] = path
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "submission %s: could not copy cached render from %s to %s (treating as cache miss): %s",
+                    submission_id,
+                    cached_path,
+                    path,
+                    exc,
+                )
+                # Stale cache pointer: purge from DB and re-render from PDF
+                await conn.execute("delete from rendered_slide_cache where content_hash = $1", content_hash)
+                cache_misses[slide_number] = content_hash
+
+        # Render any missing or un-cached slides
+        if cache_misses:
+            try:
+                pdf_bytes = await convert_pptx_to_pdf_bytes(deck_bytes)
+            except (
+                SubprocessTimeoutError,
+                SubprocessFailedError,
+                SubprocessUnavailableError,
+                NotImplementedError,
+                FileNotFoundError,
+            ) as exc:
+                logger.warning("submission %s: rendering failed: %s", submission_id, exc)
+                await _flag_rendering_unavailable(conn, submission_id, f"LibreOffice conversion failed: {exc}.")
+                pdf_bytes = None
+
+            if pdf_bytes is not None:
+                with pymupdf.open(stream=pdf_bytes, filetype="pdf") as pdf:
+                    page_count = pdf.page_count
+                for slide_number, content_hash in cache_misses.items():
+                    page_index = slide_number - 1
+                    if page_index >= page_count:
+                        continue  # defensive: conversion produced fewer pages than slides
+                    png_bytes = rasterize_page_to_png(pdf_bytes, page_index)
+                    path = f"{submission_id}/slide-{slide_number}.png"
+                    storage.upload(path, png_bytes, {"content-type": "image/png", "upsert": "true"})
+                    await conn.execute(
+                        """
+                        insert into rendered_slide_cache (content_hash, storage_path)
+                        values ($1, $2)
+                        on conflict (content_hash) do update set storage_path = excluded.storage_path
+                        """,
+                        content_hash,
+                        path,
+                    )
+                    rendered_paths[slide_number] = path
 
     for slide_number, path in rendered_paths.items():
         await conn.execute(

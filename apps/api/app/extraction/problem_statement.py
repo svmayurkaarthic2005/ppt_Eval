@@ -25,6 +25,13 @@ MAX_PROBLEM_STATEMENT_BYTES = 10 * 1024 * 1024
 ALLOWED_PPTX_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 MAX_PPTX_BYTES = 50 * 1024 * 1024
 
+# Deck upload: accept both PPTX and PDF pitch decks.
+ALLOWED_DECK_TYPES: dict[str, str] = {
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+    "application/pdf": "pdf",
+}
+MAX_DECK_BYTES = MAX_PPTX_BYTES  # same 50 MB ceiling for any deck format
+
 
 class UnsupportedFileType(ValueError):
     pass

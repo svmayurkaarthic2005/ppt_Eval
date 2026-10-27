@@ -102,6 +102,7 @@ class Submission(BaseModel):
     preliminary_score: float | None = None
     academic_benchmark: dict[str, Any] | None = None
     cost_analysis: dict[str, Any] | None = None
+    deck_file_type: str = "pptx"
     is_stale: bool = False
     evaluation_version: int = 1
 

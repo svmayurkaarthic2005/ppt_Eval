@@ -16,6 +16,8 @@ import zipfile
 from dataclasses import dataclass
 from uuid import UUID
 
+import pymupdf
+
 import asyncpg
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -223,6 +225,70 @@ def parse_pptx(content: bytes) -> list[ParsedSlide]:
     return parsed_slides
 
 
+class PdfCorruptError(Exception):
+    """Raised for a corrupt or encrypted PDF that pymupdf can't open."""
+
+
+def _derive_pdf_page_title(text: str, page_number: int) -> str:
+    """Heuristic: use the first non-empty line of the page as the title,
+    capped at 120 chars, falling back to 'Page N'."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:120]
+    if page_number == 1:
+        return "Title Page"
+    return f"Page {page_number}"
+
+
+def parse_pdf(content: bytes) -> list[ParsedSlide]:
+    """Extract per-page text from a PDF into ParsedSlide objects.
+
+    PDFs don't carry the rich structural data (shapes, charts, tables,
+    hyperlinks) that python-pptx provides from PPTX files, so every page
+    sets needs_visual_rendering=True and shapes/tables remain empty.
+    The vision model carries the evaluation weight for PDF submissions."""
+    try:
+        pdf = pymupdf.open(stream=content, filetype="pdf")
+    except Exception as exc:
+        raise PdfCorruptError(str(exc)) from exc
+
+    if pdf.is_encrypted:
+        pdf.close()
+        raise PdfCorruptError("PDF is encrypted or password-protected.")
+    if pdf.page_count == 0:
+        pdf.close()
+        raise PdfCorruptError("PDF contains no pages.")
+
+    parsed_slides: list[ParsedSlide] = []
+    try:
+        for page_number, page in enumerate(pdf, start=1):
+            raw_text = page.get_text()
+            title = _derive_pdf_page_title(raw_text, page_number)
+            parsed_slides.append(
+                ParsedSlide(
+                    slide_number=page_number,
+                    title=title,
+                    raw_text=raw_text,
+                    shapes=[],
+                    tables=[],
+                    needs_visual_rendering=True,
+                )
+            )
+    finally:
+        pdf.close()
+
+    return parsed_slides
+
+
+def _detect_deck_type(storage_path: str) -> str:
+    """Returns 'pptx' or 'pdf' based on the file extension in the storage path."""
+    ext = storage_path.rsplit(".", 1)[-1].lower() if "." in storage_path else ""
+    if ext == "pdf":
+        return "pdf"
+    return "pptx"  # default for backwards compat
+
+
 async def extract_submission_structure(conn: asyncpg.Connection, submission_id: UUID) -> None:
     row = await conn.fetchrow(
         "select pptx_storage_path from submissions where id = $1", submission_id
@@ -234,10 +300,15 @@ async def extract_submission_structure(conn: asyncpg.Connection, submission_id: 
         row["pptx_storage_path"]
     )
 
+    deck_type = _detect_deck_type(row["pptx_storage_path"])
+
     try:
-        slides = parse_pptx(content)
-    except PptxCorruptError as exc:
-        logger.warning("submission %s: corrupt/protected pptx: %s", submission_id, exc)
+        if deck_type == "pdf":
+            slides = parse_pdf(content)
+        else:
+            slides = parse_pptx(content)
+    except (PptxCorruptError, PdfCorruptError) as exc:
+        logger.warning("submission %s: corrupt/unreadable %s: %s", submission_id, deck_type, exc)
         await conn.execute("update submissions set status = 'failed' where id = $1", submission_id)
         await conn.execute(
             """
@@ -245,7 +316,7 @@ async def extract_submission_structure(conn: asyncpg.Connection, submission_id: 
             values ($1, 'pptx_corrupt', 'high', $2)
             """,
             submission_id,
-            f"Could not open the .pptx file: {exc}",
+            f"Could not open the .{deck_type} file: {exc}",
         )
         return  # handled, not raised -- the pipeline job completes normally
 

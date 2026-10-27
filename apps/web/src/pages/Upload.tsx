@@ -105,8 +105,8 @@ export default function Upload() {
   function handlePptxSelected(file: File) {
     setPptxFile(file);
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (extension !== "pptx") {
-      setPptxFileError("Must be a .pptx file.");
+    if (extension !== "pptx" && extension !== "pdf") {
+      setPptxFileError("Must be a .pptx or .pdf file.");
       return;
     }
     if (file.size > MAX_PPTX_BYTES) {
@@ -152,7 +152,7 @@ export default function Upload() {
 
   const pptxSatisfied = pptxFile !== null && !pptxFileError;
   const submitReason = !pptxSatisfied
-    ? pptxFileError ?? "Upload your slide deck (.pptx)."
+    ? pptxFileError ?? "Upload your slide deck (.pptx or .pdf)."
     : null;
 
   useEffect(() => {
@@ -415,7 +415,7 @@ export default function Upload() {
             <div className="flex flex-col gap-4">
               <p className="text-sm font-medium text-slate-700">Slide deck</p>
               <Dropzone
-                accept={["pptx"]}
+                accept={["pptx", "pdf"]}
                 file={pptxFile}
                 onFileSelected={handlePptxSelected}
                 onRemove={() => {
@@ -423,7 +423,7 @@ export default function Upload() {
                   setPptxFileError(null);
                 }}
                 error={pptxFileError}
-                hint=".pptx · up to 50MB"
+                hint=".pptx or .pdf · up to 50MB"
               />
 
               {pptxFile && !pptxFileError && (

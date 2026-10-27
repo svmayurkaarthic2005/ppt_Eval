@@ -98,9 +98,9 @@ worker crash mid-pipeline just means the next poll picks the job back up.
 
 | # | Stage | What happens |
 |---|-------|--------------|
-| 1 | **Upload** | A team submits a `.pptx` plus a problem statement (pick an existing one, type one, or upload a PDF/DOCX). The problem statement is the grouping key for ranking — it's never fuzzy-matched, only an explicit FK. |
-| 2 | **Extract** | `python-pptx` pulls text, layout, speaker notes, table cell values, and hyperlinks out of every slide — structurally, not as an OCR guess. |
-| 3 | **Render** | Each slide is rendered to a real PNG via headless LibreOffice (with a PowerPoint COM fallback on Windows), so slides containing charts, diagrams, or screenshots can actually be *seen* by the vision model, not just inferred from whatever text happens to be on them. |
+| 1 | **Upload** | A team submits a slide deck (`.pptx` or `.pdf`) plus a problem statement (pick an existing one, type one, or upload a PDF/DOCX). The problem statement is the grouping key for ranking — it's never fuzzy-matched, only an explicit FK. |
+| 2 | **Extract** | `python-pptx` (for PPTX) or `pymupdf` (for PDF) pulls text, layout, speaker notes, table cell values, and hyperlinks out of every slide — structurally, not as an OCR guess. |
+| 3 | **Render** | Each slide is rendered to a real PNG (directly via PyMuPDF for PDFs, or via headless LibreOffice with a PowerPoint COM fallback on Windows for PPTX), so slides containing charts, diagrams, or screenshots can actually be *seen* by the vision model, not just inferred from whatever text happens to be on them. |
 | 4 | **Rubric build** | The event's rubric template (sections → criteria, each with its own max score) is instantiated for this submission, grounded in its stated problem domain and target beneficiary. |
 | 5 | **Stage 1 — triage** | Every submission gets one cheap, fast pass across the rubric to produce a provisional score. This is what lets an organizer see *something* for every team immediately, without paying full cost for submissions that won't make the cut. |
 | 6 | **Stage 2 — deep analysis** *(selected submissions only)* | For each criterion: slide text + slide images (batched, with the model explicitly told which pictured slides it is *not* seeing this round, to prevent it hallucinating content from slides it was never shown) are sent to Groq's vision model in strict JSON-schema mode. The response must cite which slide(s) support the score — citations that reference a slide number that doesn't exist are dropped rather than trusted. A criterion that fails validation twice gets flagged `needs_human_review` and a safe placeholder score, rather than leaving the submission stuck mid-pipeline forever. |
@@ -169,8 +169,8 @@ apps/
   api/                      FastAPI backend
     app/routers/              submissions, teams, evaluation, rubric, calibration, rankings, problem_statements
     app/pipeline/             orchestrator.py — stage1/stage2 job handlers
-    app/extraction/           pptx structural parsing, slide-role classification
-    app/rendering/            LibreOffice/PowerPoint slide-to-image conversion
+    app/extraction/           pptx & pdf structural parsing, slide-role classification
+    app/rendering/            slide-to-image rasterization (direct PyMuPDF for PDF, LibreOffice/PowerPoint for PPTX)
     app/llm/                  Groq client, rate limiter
     app/validation/           deterministic numeric checks, cross-modal consistency
     app/research/             IEEE/arXiv literature fetch + academic benchmark synthesis

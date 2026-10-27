@@ -50,6 +50,21 @@ def test_rasterize_page_to_png_produces_valid_png_at_expected_dpi():
     assert abs(pixmap.height - 1754) < 5
 
 
+def test_rasterize_multiple_pages_of_pdf():
+    doc = pymupdf.open()
+    p1 = doc.new_page()
+    p1.insert_text((72, 72), "Slide 1")
+    p2 = doc.new_page()
+    p2.insert_text((72, 72), "Slide 2")
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    png_0 = rasterize_page_to_png(pdf_bytes, page_index=0)
+    png_1 = rasterize_page_to_png(pdf_bytes, page_index=1)
+    assert png_0.startswith(b"\x89PNG\r\n\x1a\n")
+    assert png_1.startswith(b"\x89PNG\r\n\x1a\n")
+
+
 def test_resolve_soffice_path_returns_none_when_unavailable(monkeypatch):
     from app.rendering.slide_renderer import _resolve_soffice_path
     monkeypatch.setattr("shutil.which", lambda _: None)

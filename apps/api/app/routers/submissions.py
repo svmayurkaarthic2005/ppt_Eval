@@ -26,6 +26,8 @@ from app.evidence.traceability import (
     get_submission_slides,
 )
 from app.extraction import (
+    ALLOWED_DECK_TYPES,
+    MAX_DECK_BYTES,
     MAX_PPTX_BYTES,
     MAX_PROBLEM_STATEMENT_BYTES,
     extract_text,
@@ -48,6 +50,13 @@ _EXTENSION_CONTENT_TYPES = {
 _PPTX_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 )
+
+# Deck upload: both .pptx and .pdf are accepted.
+ALLOWED_DECK_EXTENSIONS = {"pptx", "pdf"}
+_DECK_CONTENT_TYPES = {
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "pdf": "application/pdf",
+}
 
 
 def _extension_of(filename: str | None) -> str:
@@ -166,11 +175,12 @@ async def create_submission(
         if len(ps_content) > MAX_PROBLEM_STATEMENT_BYTES:
             raise HTTPException(status_code=413, detail="Problem statement exceeds 10MB")
 
-    if _extension_of(pptx.filename) != "pptx":
-        raise HTTPException(status_code=422, detail="Slide deck must be .pptx")
+    deck_extension = _extension_of(pptx.filename)
+    if deck_extension not in ALLOWED_DECK_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="Slide deck must be .pptx or .pdf")
 
     pptx_content = await pptx.read()
-    if len(pptx_content) > MAX_PPTX_BYTES:
+    if len(pptx_content) > MAX_DECK_BYTES:
         raise HTTPException(status_code=413, detail="Slide deck exceeds 50MB")
 
     async with pool.acquire() as conn, conn.transaction():
@@ -224,12 +234,13 @@ async def create_submission(
                     """
                     insert into submissions
                         (team_id, problem_statement_id, pptx_storage_path, problem_statement_source,
-                         problem_statement_storage_path, status)
-                    values ($1, $2, 'pending', 'uploaded', 'pending', 'uploaded')
+                         problem_statement_storage_path, deck_file_type, status)
+                    values ($1, $2, 'pending', 'uploaded', 'pending', $3, 'uploaded')
                     returning id
                     """,
                     team_id,
                     ps_id,
+                    deck_extension,
                 )
             )["id"]
         else:
@@ -238,20 +249,22 @@ async def create_submission(
                     """
                     insert into submissions
                         (team_id, problem_statement_id, pptx_storage_path, problem_statement_source,
-                         problem_statement_text, status)
-                    values ($1, $2, 'pending', 'typed', $3, 'uploaded')
+                         problem_statement_text, deck_file_type, status)
+                    values ($1, $2, 'pending', 'typed', $3, $4, 'uploaded')
                     returning id
                     """,
                     team_id,
                     ps_id,
                     typed_text,
+                    deck_extension,
                 )
             )["id"]
 
-        pptx_path = f"{submission_id}/original.pptx"
+        pptx_path = f"{submission_id}/original.{deck_extension}"
+        deck_content_type = _DECK_CONTENT_TYPES.get(deck_extension, _PPTX_CONTENT_TYPE)
         storage = get_service_client().storage
         storage.from_("pptx-uploads").upload(
-            pptx_path, pptx_content, {"content-type": _PPTX_CONTENT_TYPE}
+            pptx_path, pptx_content, {"content-type": deck_content_type}
         )
 
         if has_file:

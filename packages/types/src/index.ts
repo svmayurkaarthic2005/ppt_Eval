@@ -181,6 +181,7 @@ export interface Submission {
   preliminary_score?: number | null;
   academic_benchmark?: AcademicBenchmark | null;
   cost_analysis?: CostAnalysis | null;
+  deck_file_type?: string;
   is_stale?: boolean;
   evaluation_version?: number;
 }
