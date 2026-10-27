@@ -173,6 +173,8 @@ function SubmissionSlidesViewer({ slides }: { slides: SubmissionSlides }) {
         {slides.pptx_download_url && (
           <a
             href={slides.pptx_download_url}
+            target="_blank"
+            rel="noreferrer"
             className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3.5 py-1.5 text-xs font-bold text-indigo-700 transition hover:bg-indigo-100 border border-indigo-200/80"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
