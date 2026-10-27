@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.auth import get_current_user_id
+from app.auth import get_current_admin_id, get_current_user_id
 from app.comparison import (
     ComparisonResponse,
     RubricVersionMismatchError,
@@ -302,7 +302,9 @@ async def create_submission(
 
 @router.post("/stage2-selection")
 async def trigger_stage2_selection(
-    top_n: int = 10, pool: asyncpg.Pool = Depends(get_db_pool)
+    top_n: int = 10,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> dict[str, list[UUID]]:
     """Admin-triggered: looks across every submission that's finished
     Stage 1, selects the top-N plus anything flagged/manually requested,
@@ -442,7 +444,9 @@ async def get_audit(
 
 @router.post("/{submission_id}/request-review", response_model=Submission)
 async def request_manual_review(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
     """An admin manually marks a submission for Stage 2 (full) analysis,
     regardless of its Stage 1 preliminary score."""
@@ -466,7 +470,10 @@ class SetManualRankBody(BaseModel):
 
 @router.patch("/{submission_id}/rank", response_model=Submission)
 async def set_manual_rank(
-    submission_id: UUID, body: SetManualRankBody, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    body: SetManualRankBody,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
     """Admin pin: overrides this submission's computed rank. Pinned
     submissions sort first (by their own pin number, ascending) ahead of
@@ -487,7 +494,9 @@ async def set_manual_rank(
 
 @router.post("/{submission_id}/benchmark", response_model=Submission)
 async def generate_benchmark_for_submission(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
     """Explicitly triggers or refreshes the academic & literature benchmark
     (IEEE, Google Scholar / CrossRef, arXiv) for a submission."""
@@ -569,7 +578,9 @@ async def generate_benchmark_for_submission(
 
 @router.post("/{submission_id}/cost-analysis", response_model=Submission)
 async def generate_cost_analysis_for_submission(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
     """Explicitly triggers or refreshes the required components & cost affordability analysis
     (Bill of Materials, missing components calculation, market benchmark rates) for a submission."""
@@ -660,7 +671,9 @@ async def generate_cost_analysis_for_submission(
 
 @router.post("/{submission_id}/re-evaluate", response_model=Submission)
 async def reevaluate_submission(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
     """Explicitly triggers re-evaluation for a submission, rebuilding derived results,
     updating stale state, and queuing Stage 2 analysis idempotently."""
@@ -709,7 +722,9 @@ async def reevaluate_submission(
 
 @router.delete("/{submission_id}")
 async def delete_submission(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> dict[str, Any]:
     """Permanently deletes a submission, its slides, scores, and storage files.
     If this was the team's only submission, also cleans up the team."""

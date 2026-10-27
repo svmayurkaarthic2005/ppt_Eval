@@ -23,6 +23,7 @@ import {
   reEvaluateSubmission,
 } from "../lib/api";
 import { estimateRemaining } from "../lib/timing";
+import { useAdminAuth } from "../lib/useAdminAuth";
 
 const TERMINAL_STATUSES = new Set(["scored", "failed"]);
 
@@ -240,10 +241,12 @@ function AcademicBenchmarkSection({
   benchmark,
   submissionId,
   onRefresh,
+  isAdmin,
 }: {
   benchmark?: AcademicBenchmark | null;
   submissionId: string;
   onRefresh: (s: Submission) => void;
+  isAdmin: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -295,29 +298,31 @@ function AcademicBenchmarkSection({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleAnalyze}
-          disabled={loading}
-          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35 disabled:opacity-50"
-        >
-          {loading ? (
-            <>
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" />
-                <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-              Querying IEEE & arXiv...
-            </>
-          ) : (
-            <>
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {benchmark ? "Re-run Literature Benchmark" : "Analyze Literature"}
-            </>
-          )}
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={loading}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35 disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" />
+                  <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Querying IEEE & arXiv...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {benchmark ? "Re-run Literature Benchmark" : "Analyze Literature"}
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -520,10 +525,12 @@ function CostAffordabilitySection({
   costAnalysis,
   submissionId,
   onRefresh,
+  isAdmin,
 }: {
   costAnalysis?: CostAnalysis | null;
   submissionId: string;
   onRefresh: (s: Submission) => void;
+  isAdmin: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -713,29 +720,31 @@ function CostAffordabilitySection({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleAnalyze}
-          disabled={loading}
-          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02] hover:shadow-emerald-600/35 disabled:opacity-50"
-        >
-          {loading ? (
-            <>
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                <circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" />
-                <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-              Calculating Components & Pricing...
-            </>
-          ) : (
-            <>
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              {costAnalysis ? "Re-calculate Cost & BOM" : "Calculate Components & Costs"}
-            </>
-          )}
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={loading}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02] hover:shadow-emerald-600/35 disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="12" cy="12" r="10" strokeWidth="4" className="opacity-25" />
+                  <path fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Calculating Components & Pricing...
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {costAnalysis ? "Re-calculate Cost & BOM" : "Calculate Components & Costs"}
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {error && (
@@ -952,6 +961,7 @@ function CostAffordabilitySection({
 export default function Team() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { isAdmin } = useAdminAuth();
 
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [evidence, setEvidence] = useState<SubmissionEvidence | null>(null);
@@ -1176,6 +1186,7 @@ export default function Team() {
             </div>
           )}
 
+          {isAdmin && (
           <button
             type="button"
             onClick={() => setConfirmDelete(true)}
@@ -1197,10 +1208,11 @@ export default function Team() {
             </svg>
             Delete Team
           </button>
+          )}
         </div>
       </div>
 
-      {submission.is_stale && (
+      {isAdmin && submission.is_stale && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 p-4 shadow-sm text-amber-900">
           <div className="flex items-start sm:items-center gap-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-200/80 text-amber-800">
@@ -1285,6 +1297,7 @@ export default function Team() {
           benchmark={submission.academic_benchmark}
           submissionId={submission.id}
           onRefresh={handleSubmissionUpdated}
+          isAdmin={isAdmin}
         />
       )}
 
@@ -1293,6 +1306,7 @@ export default function Team() {
           costAnalysis={submission.cost_analysis}
           submissionId={submission.id}
           onRefresh={handleSubmissionUpdated}
+          isAdmin={isAdmin}
         />
       )}
 

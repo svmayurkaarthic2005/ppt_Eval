@@ -4,6 +4,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from app.auth import get_current_admin_id
 from app.calibration.reliability import compute_and_store_reliability_label
 from app.calibration.service import (
     CalibrationRunSizeError,
@@ -99,7 +100,9 @@ async def list_runs(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[Calibrati
 
 @router.post("/runs", response_model=CalibrationRunOut, status_code=201)
 async def create_calibration_run(
-    body: CalibrationRunIn, pool: asyncpg.Pool = Depends(get_db_pool)
+    body: CalibrationRunIn,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> CalibrationRunOut:
     submissions = [
         CalibrationSubmissionInput(

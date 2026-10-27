@@ -1,12 +1,25 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+
+import { signOutAdmin } from "../lib/supabaseClient";
+import { useAdminAuth } from "../lib/useAdminAuth";
 
 const NAV_LINKS = [
   { to: "/", label: "Leaderboard & Rankings", end: true },
   { to: "/upload", label: "Upload Deck" },
-  { to: "/admin/calibration", label: "Human Calibration" },
 ];
 
 export default function Layout() {
+  const { isAdmin, email } = useAdminAuth();
+  const navigate = useNavigate();
+  const navLinks = isAdmin
+    ? [...NAV_LINKS, { to: "/admin/calibration", label: "Human Calibration", end: false }]
+    : NAV_LINKS;
+
+  async function handleLogout() {
+    await signOutAdmin();
+    navigate("/");
+  }
+
   return (
     <div className="min-h-screen bg-slate-50/70 stitch-gradient-mesh text-slate-900 flex flex-col font-sans">
       <header className="sticky top-0 z-50 stitch-glass border-b border-slate-200/80 transition-all">
@@ -37,7 +50,7 @@ export default function Layout() {
               "Human Ca...ibration" on narrow screens) visibly hints that
               there's more to scroll, instead of just looking clipped. */}
           <div className="flex min-w-0 max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-slate-200/60 bg-slate-100/80 p-1 shadow-inner [mask-image:linear-gradient(to_right,black_92%,transparent_100%)]">
-            {NAV_LINKS.map((link) => (
+            {navLinks.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
@@ -66,6 +79,24 @@ export default function Layout() {
               </span>
               <span className="hidden sm:inline">Engine Online</span>
             </div>
+
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={handleLogout}
+                title={email ?? "Admin"}
+                className="rounded-full border border-slate-200/80 bg-white px-2.5 sm:px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+              >
+                Logout
+              </button>
+            ) : (
+              <NavLink
+                to="/login"
+                className="rounded-full border border-slate-200/80 bg-white px-2.5 sm:px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+              >
+                Admin Login
+              </NavLink>
+            )}
           </div>
         </nav>
       </header>

@@ -133,9 +133,10 @@ export async function createCalibrationRun(
   submissions: CalibrationRunSubmissionInput[],
   notes?: string,
 ): Promise<CalibrationRunSummary> {
+  const token = await getAccessToken();
   const response = await fetch(`${API_URL}/calibration/runs`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ submissions, notes: notes ?? null }),
   });
   return parseOrThrow(response);
@@ -182,7 +183,11 @@ export async function listProblemStatements(): Promise<ProblemStatement[]> {
  * selects -- top-N by preliminary score, plus anything flagged or manually
  * requested. Without this, a submission sits at 'analyzing' forever. */
 export async function triggerStage2Selection(): Promise<{ selected_submission_ids: string[] }> {
-  const response = await fetch(`${API_URL}/submissions/stage2-selection`, { method: "POST" });
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/stage2-selection`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
@@ -190,9 +195,10 @@ export async function setManualRank(
   submissionId: string,
   manualRank: number | null,
 ): Promise<Submission> {
+  const token = await getAccessToken();
   const response = await fetch(`${API_URL}/submissions/${submissionId}/rank`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ manual_rank: manualRank }),
   });
   return parseOrThrow(response);
@@ -220,14 +226,22 @@ export async function getComparison(ids: string[]): Promise<ComparisonResponse> 
 export async function deleteTeam(
   teamId: string,
 ): Promise<{ deleted: boolean; team_id: string; team_name: string }> {
-  const response = await fetch(`${API_URL}/teams/${teamId}`, { method: "DELETE" });
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/teams/${teamId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
 export async function deleteSubmission(
   submissionId: string,
 ): Promise<{ deleted: boolean; submission_id: string; team_id: string }> {
-  const response = await fetch(`${API_URL}/submissions/${submissionId}`, { method: "DELETE" });
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/${submissionId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
@@ -236,9 +250,10 @@ export async function createProblemStatement(data: {
   reference_text?: string;
   is_custom?: boolean;
 }): Promise<ProblemStatement> {
+  const token = await getAccessToken();
   const response = await fetch(`${API_URL}/problem-statements/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(data),
   });
   return parseOrThrow(response);
@@ -247,29 +262,37 @@ export async function createProblemStatement(data: {
 export async function deleteProblemStatement(
   problemStatementId: string,
 ): Promise<{ deleted: boolean; problem_statement_id: string; title: string }> {
+  const token = await getAccessToken();
   const response = await fetch(`${API_URL}/problem-statements/${problemStatementId}`, {
     method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
   });
   return parseOrThrow(response);
 }
 
 export async function generateAcademicBenchmark(submissionId: string): Promise<Submission> {
+  const token = await getAccessToken();
   const response = await fetch(`${API_URL}/submissions/${submissionId}/benchmark`, {
     method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
   });
   return parseOrThrow(response);
 }
 
 export async function generateCostAnalysis(submissionId: string): Promise<Submission> {
+  const token = await getAccessToken();
   const response = await fetch(`${API_URL}/submissions/${submissionId}/cost-analysis`, {
     method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
   });
   return parseOrThrow(response);
 }
 
 export async function reEvaluateSubmission(submissionId: string): Promise<Submission> {
+  const token = await getAccessToken();
   const response = await fetch(`${API_URL}/submissions/${submissionId}/re-evaluate`, {
     method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
   });
   return parseOrThrow(response);
 }

@@ -1,6 +1,6 @@
 import type { CalibrationCandidate, CalibrationRun, CalibrationRunSummary } from "@hackeval/types";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 
 import {
   ApiError,
@@ -8,6 +8,7 @@ import {
   listCalibrationCandidates,
   listCalibrationRuns,
 } from "../lib/api";
+import { useAdminAuth } from "../lib/useAdminAuth";
 
 const SECTION_DISPLAY_NAMES: Record<string, string> = {
   problem_understanding: "Problem Understanding",
@@ -29,6 +30,7 @@ function formatSectionTitle(key: string): string {
 }
 
 export default function AdminCalibration() {
+  const { isAdmin, loading: authLoading } = useAdminAuth();
   const [candidates, setCandidates] = useState<CalibrationCandidate[]>([]);
   const [runs, setRuns] = useState<CalibrationRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,7 +146,7 @@ export default function AdminCalibration() {
     }
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <main className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
@@ -153,6 +155,10 @@ export default function AdminCalibration() {
         </div>
       </main>
     );
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/login" replace />;
   }
 
   return (

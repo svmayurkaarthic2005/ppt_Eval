@@ -5,6 +5,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.auth import get_current_admin_id
 from app.models.schemas import ProblemStatement
 from app.routers.submissions import get_db_pool
 from app.storage_cleanup import cleanup_submission_storage
@@ -28,7 +29,9 @@ async def list_problem_statements(pool: asyncpg.Pool = Depends(get_db_pool)) -> 
 
 @router.post("/", response_model=ProblemStatement, status_code=201)
 async def create_problem_statement(
-    payload: ProblemStatementCreate, pool: asyncpg.Pool = Depends(get_db_pool)
+    payload: ProblemStatementCreate,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> ProblemStatement:
     """Creates a new problem statement directly from the UI."""
     title = payload.title.strip()
@@ -52,7 +55,9 @@ async def create_problem_statement(
 
 @router.delete("/{problem_statement_id}")
 async def delete_problem_statement(
-    problem_statement_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    problem_statement_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> dict[str, Any]:
     """Permanently deletes a problem statement and cleans up any submissions
     referencing it."""

@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import RankingTable from "../components/RankingTable";
 import { useConfirm } from "../components/ConfirmDialog";
 import { downloadCsv, rankingRowsToCsv } from "../lib/csv";
+import { useAdminAuth } from "../lib/useAdminAuth";
 import {
   ApiError,
   createProblemStatement,
@@ -452,6 +453,7 @@ function ProblemStatementGroupCard({
   onSetManualRank,
   onDeleteRow,
   onDeleteGroup,
+  isAdmin,
 }: {
   group: ProblemStatementGroup;
   selected: Set<string>;
@@ -459,6 +461,7 @@ function ProblemStatementGroupCard({
   onSetManualRank: (submissionId: string, manualRank: number | null) => void;
   onDeleteRow: (row: RankingRow) => void;
   onDeleteGroup: (group: ProblemStatementGroup) => void;
+  isAdmin: boolean;
 }) {
   const [expanded, setExpanded] = useState(group.submission_count <= AUTO_EXPAND_MAX_SIZE);
   const sectionKeys = useMemo(() => sectionKeysOf(group.submissions), [group.submissions]);
@@ -502,20 +505,22 @@ function ProblemStatementGroupCard({
           </div>
         </button>
 
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDeleteGroup(group);
-          }}
-          title={`Remove problem statement "${group.title}"`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-red-200/80 bg-red-50/70 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 transition"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-          Remove
-        </button>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteGroup(group);
+            }}
+            title={`Remove problem statement "${group.title}"`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-red-200/80 bg-red-50/70 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 transition"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Remove
+          </button>
+        )}
       </div>
       {expanded && (
         <div className="border-t border-slate-100 p-3 sm:p-4 bg-slate-50/40">
@@ -524,8 +529,8 @@ function ProblemStatementGroupCard({
             sectionKeys={sectionKeys}
             selected={selected}
             onToggleSelected={onToggleSelected}
-            onSetManualRank={onSetManualRank}
-            onDeleteRow={onDeleteRow}
+            onSetManualRank={isAdmin ? onSetManualRank : undefined}
+            onDeleteRow={isAdmin ? onDeleteRow : undefined}
           />
         </div>
       )}
@@ -534,6 +539,7 @@ function ProblemStatementGroupCard({
 }
 
 export default function Home() {
+  const { isAdmin } = useAdminAuth();
   const confirm = useConfirm();
   const [view, setView] = useState<"overall" | "by-problem-statement">("overall");
   const [overall, setOverall] = useState<RankingRow[] | null>(null);
@@ -751,27 +757,31 @@ export default function Home() {
 
         {/* Single, Primary Action Button Group */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50/70 hover:border-indigo-300"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            Add Problem Statement
-          </button>
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-indigo-700 shadow-sm transition-all hover:bg-indigo-50/70 hover:border-indigo-300"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Problem Statement
+              </button>
 
-          <button
-            type="button"
-            onClick={() => setIsRemoveModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-red-700 shadow-sm transition-all hover:bg-red-100 hover:border-red-300"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Remove Problem Statement
-          </button>
+              <button
+                type="button"
+                onClick={() => setIsRemoveModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50/70 px-3.5 py-2.5 text-xs sm:text-sm font-bold text-red-700 shadow-sm transition-all hover:bg-red-100 hover:border-red-300"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Remove Problem Statement
+              </button>
+            </>
+          )}
 
           <Link
             to="/upload"
@@ -791,7 +801,7 @@ export default function Home() {
         </div>
       )}
 
-      {totalAwaitingStage2 > 0 && (
+      {isAdmin && totalAwaitingStage2 > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/80 bg-amber-50/90 p-4 shadow-sm">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
@@ -921,8 +931,8 @@ export default function Home() {
           sectionKeys={overallSectionKeys}
           selected={selected}
           onToggleSelected={toggleSelected}
-          onSetManualRank={handleSetManualRank}
-          onDeleteRow={handleDeleteRow}
+          onSetManualRank={isAdmin ? handleSetManualRank : undefined}
+          onDeleteRow={isAdmin ? handleDeleteRow : undefined}
         />
       )}
 
@@ -947,6 +957,7 @@ export default function Home() {
               onSetManualRank={handleSetManualRank}
               onDeleteRow={handleDeleteRow}
               onDeleteGroup={handleDeleteGroup}
+              isAdmin={isAdmin}
             />
           ))}
 
@@ -982,17 +993,19 @@ export default function Home() {
                   </svg>
                   Upload Deck
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteProblemStatementById(ps.id, ps.title)}
-                  title={`Remove problem statement "${ps.title}"`}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 transition"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Remove
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProblemStatementById(ps.id, ps.title)}
+                    title={`Remove problem statement "${ps.title}"`}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50/70 px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 transition"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Remove
+                  </button>
+                )}
               </div>
             </div>
           ))}

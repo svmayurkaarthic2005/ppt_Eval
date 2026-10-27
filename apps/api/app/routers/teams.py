@@ -5,6 +5,7 @@ from uuid import UUID
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import get_current_admin_id
 from app.routers.submissions import get_db_pool
 from app.storage_cleanup import cleanup_submission_storage
 
@@ -15,7 +16,9 @@ router = APIRouter(prefix="/teams", tags=["teams"])
 
 @router.delete("/{team_id}")
 async def delete_team(
-    team_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    team_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> dict[str, Any]:
     """Permanently deletes a team, all its submissions, slides, scores,
     and associated storage files."""
