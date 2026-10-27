@@ -9,7 +9,7 @@ import type {
   SubmissionSlides,
 } from "@hackeval/types";
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 
 import {
   ApiError,
@@ -961,7 +961,7 @@ function CostAffordabilitySection({
 export default function Team() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAdmin } = useAdminAuth();
+  const { isAdmin, loading: authLoading } = useAdminAuth();
 
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [evidence, setEvidence] = useState<SubmissionEvidence | null>(null);
@@ -1072,6 +1072,9 @@ export default function Team() {
       setDeleting(false);
     }
   }
+
+  if (authLoading) return null;
+  if (!isAdmin) return <Navigate to="/login" replace />;
 
   if (error) {
     return (

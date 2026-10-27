@@ -534,6 +534,7 @@ function ProblemStatementGroupCard({
             onToggleSelected={onToggleSelected}
             onSetManualRank={isAdmin ? onSetManualRank : undefined}
             onDeleteRow={isAdmin ? onDeleteRow : undefined}
+            linkToTeam={isAdmin}
           />
         </div>
       )}
@@ -936,6 +937,7 @@ export default function Home() {
           onToggleSelected={toggleSelected}
           onSetManualRank={isAdmin ? handleSetManualRank : undefined}
           onDeleteRow={isAdmin ? handleDeleteRow : undefined}
+          linkToTeam={isAdmin}
         />
       )}
 

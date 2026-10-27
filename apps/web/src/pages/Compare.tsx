@@ -1,12 +1,13 @@
 import type { ComparisonResponse, RubricVersionMismatchErrorBody } from "@hackeval/types";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import ComparisonHeader from "../components/compare/ComparisonHeader";
 import ComparisonRadarChart from "../components/compare/ComparisonRadarChart";
 import ComparisonSummaryTable from "../components/compare/ComparisonSummaryTable";
 import CriteriaDetailTable from "../components/compare/CriteriaDetailTable";
 import { ApiError, RubricMismatchError, getComparison } from "../lib/api";
+import { useAdminAuth } from "../lib/useAdminAuth";
 
 const MIN_TEAMS = 2;
 
@@ -21,6 +22,7 @@ function SkeletonTable() {
 }
 
 export default function Compare() {
+  const { isAdmin, loading: authLoading } = useAdminAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -70,13 +72,15 @@ export default function Compare() {
     setSearchParams({ ids: remaining.join(",") });
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <main className="mx-auto min-h-[calc(100vh-57px)] max-w-6xl bg-slate-50 px-4 py-12">
         <SkeletonTable />
       </main>
     );
   }
+
+  if (!isAdmin) return <Navigate to="/login" replace />;
 
   if (mismatch) {
     const names = mismatch.details.map((d) => d.submission_id.slice(0, 8)).join(" and ");

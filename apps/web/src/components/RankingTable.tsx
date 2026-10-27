@@ -143,6 +143,7 @@ export default function RankingTable({
   onToggleSelected,
   onSetManualRank,
   onDeleteRow,
+  linkToTeam = true,
 }: {
   rows: RankingRow[];
   sectionKeys: string[];
@@ -150,13 +151,17 @@ export default function RankingTable({
   onToggleSelected: (submissionId: string) => void;
   onSetManualRank?: (submissionId: string, manualRank: number | null) => void;
   onDeleteRow?: (row: RankingRow) => void;
+  /** Team drill-down (and compare selection, which only makes sense once
+   * you can open a team page) is admin-only -- general viewers get a
+   * read-only rank table with no navigable rows. */
+  linkToTeam?: boolean;
 }) {
   return (
     <div className="stitch-card overflow-x-auto rounded-2xl shadow-sm [mask-image:linear-gradient(to_right,black_96%,transparent_100%)]">
       <table className="w-full min-w-max text-left text-sm border-collapse">
         <thead>
           <tr className="border-b border-slate-200/80 bg-slate-50/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-            <th className="px-4 py-3.5 w-10"></th>
+            {linkToTeam && <th className="px-4 py-3.5 w-10"></th>}
             <th className="px-4 py-3.5">Rank</th>
             <th className="px-4 py-3.5">Team & Project</th>
             {/* Hidden below sm: the score is shown inline under the team
@@ -196,38 +201,49 @@ export default function RankingTable({
                   isSelected ? "bg-indigo-50/70" : "hover:bg-slate-50/80"
                 }`}
               >
-                <td className="px-4 py-3.5">
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => onToggleSelected(row.submission_id)}
-                    disabled={!isSelected && selected.size >= MAX_COMPARE}
-                    className="h-4 w-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 transition cursor-pointer"
-                  />
-                </td>
+                {linkToTeam && (
+                  <td className="px-4 py-3.5">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleSelected(row.submission_id)}
+                      disabled={!isSelected && selected.size >= MAX_COMPARE}
+                      className="h-4 w-4 rounded-md border-slate-300 text-indigo-600 focus:ring-indigo-500 transition cursor-pointer"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3.5">
                   <RankCell row={row} onSetManualRank={onSetManualRank} />
                 </td>
                 <td className="px-4 py-3.5">
-                  <Link
-                    to={`/team/${row.submission_id}`}
-                    className="group block"
-                  >
-                    <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition text-sm">
-                      {row.team_name}
-                    </span>
-                    <span className="block text-[11px] text-slate-600">
-                      ID: {row.submission_id.slice(0, 8)}...
-                    </span>
-                    {/* Score shown here only below sm, mirroring the
-                        standalone Total Score column that's hidden there. */}
-                    <span className="mt-1 flex items-center gap-1.5 sm:hidden">
-                      <span className="font-extrabold tabular-nums text-slate-900 text-sm">
-                        {Number(row.total.toFixed(2))}
+                  {linkToTeam ? (
+                    <Link to={`/team/${row.submission_id}`} className="group block">
+                      <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition text-sm">
+                        {row.team_name}
                       </span>
-                      <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
-                    </span>
-                  </Link>
+                      <span className="block text-[11px] text-slate-600">
+                        ID: {row.submission_id.slice(0, 8)}...
+                      </span>
+                      {/* Score shown here only below sm, mirroring the
+                          standalone Total Score column that's hidden there. */}
+                      <span className="mt-1 flex items-center gap-1.5 sm:hidden">
+                        <span className="font-extrabold tabular-nums text-slate-900 text-sm">
+                          {Number(row.total.toFixed(2))}
+                        </span>
+                        <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
+                      </span>
+                    </Link>
+                  ) : (
+                    <div className="block">
+                      <span className="font-bold text-slate-900 text-sm">{row.team_name}</span>
+                      <span className="mt-1 flex items-center gap-1.5 sm:hidden">
+                        <span className="font-extrabold tabular-nums text-slate-900 text-sm">
+                          {Number(row.total.toFixed(2))}
+                        </span>
+                        <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
+                      </span>
+                    </div>
+                  )}
                 </td>
                 <td className="hidden sm:table-cell whitespace-nowrap px-4 py-3.5">
                   <div className="flex items-center gap-2.5">

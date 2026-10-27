@@ -316,7 +316,10 @@ async def trigger_stage2_selection(
 
 
 @router.get("/ranking", response_model=list[RankedSubmission])
-async def get_ranking(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[RankedSubmission]:
+async def get_ranking(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
+) -> list[RankedSubmission]:
     """Stage 3: one ranked list combining Stage-1-only and fully Stage-2-scored
     submissions, each tagged with which stage produced its score. Registered
     before /{submission_id} so "ranking" is never mistaken for a submission id."""
@@ -325,7 +328,10 @@ async def get_ranking(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[RankedS
 
 
 @router.get("/dashboard", response_model=list[DashboardRow])
-async def get_dashboard(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[DashboardRow]:
+async def get_dashboard(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
+) -> list[DashboardRow]:
     """Phase 14: the /dashboard page's full data set in one call -- sorting
     and filtering happen client-side. Registered before /{submission_id} so
     "dashboard" is never mistaken for a submission id."""
@@ -337,6 +343,7 @@ async def get_dashboard(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[Dashb
 async def compare_submissions(
     ids: str = Query(..., description="Comma-separated submission ids, 2-6 distinct"),
     pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> ComparisonResponse | JSONResponse:
     """Phase 15. Registered before /{submission_id} so "compare" is never
     mistaken for a submission id."""
@@ -377,7 +384,9 @@ async def compare_submissions(
 
 @router.get("/{submission_id}", response_model=Submission)
 async def get_submission(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -397,7 +406,9 @@ async def get_submission(
 
 @router.post("/{submission_id}/extract-problem-statement", response_model=Submission)
 async def rerun_extract_problem_statement(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
     async with pool.acquire() as conn, conn.transaction():
         await extract_problem_statement(conn, submission_id)
@@ -409,7 +420,9 @@ async def rerun_extract_problem_statement(
 
 @router.get("/{submission_id}/evidence", response_model=SubmissionEvidenceOut)
 async def get_evidence(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> SubmissionEvidenceOut:
     async with pool.acquire() as conn:
         submission = await conn.fetchrow("select id from submissions where id = $1", submission_id)
@@ -420,7 +433,9 @@ async def get_evidence(
 
 @router.get("/{submission_id}/slides", response_model=SubmissionSlidesOut)
 async def get_slides(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> SubmissionSlidesOut:
     """Lets a viewer see the original deck: a signed download link for the
     .pptx plus a signed image per rendered slide."""
@@ -433,7 +448,9 @@ async def get_slides(
 
 @router.get("/{submission_id}/audit", response_model=SubmissionAuditOut)
 async def get_audit(
-    submission_id: UUID, pool: asyncpg.Pool = Depends(get_db_pool)
+    submission_id: UUID,
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
 ) -> SubmissionAuditOut:
     async with pool.acquire() as conn:
         submission = await conn.fetchrow("select id from submissions where id = $1", submission_id)

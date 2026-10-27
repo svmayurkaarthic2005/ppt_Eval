@@ -61,7 +61,10 @@ async def calibration_status() -> dict[str, str]:
 
 
 @router.get("/candidates", response_model=list[CalibrationCandidate])
-async def list_candidates(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[CalibrationCandidate]:
+async def list_candidates(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
+) -> list[CalibrationCandidate]:
     """Already-scored submissions an admin can pick 20-30 of for a run."""
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -92,7 +95,10 @@ async def list_candidates(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[Cal
 
 
 @router.get("/runs", response_model=list[CalibrationRunSchema])
-async def list_runs(pool: asyncpg.Pool = Depends(get_db_pool)) -> list[CalibrationRunSchema]:
+async def list_runs(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
+) -> list[CalibrationRunSchema]:
     async with pool.acquire() as conn:
         rows = await conn.fetch("select * from calibration_runs order by created_at desc")
     return [CalibrationRunSchema(**dict(r)) for r in rows]

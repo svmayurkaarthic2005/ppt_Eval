@@ -110,17 +110,26 @@ export function createSubmission(
 }
 
 export async function getSubmission(id: string): Promise<Submission> {
-  const response = await fetch(`${API_URL}/submissions/${id}`);
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/${id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
 export async function listCalibrationCandidates(): Promise<CalibrationCandidate[]> {
-  const response = await fetch(`${API_URL}/calibration/candidates`);
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/calibration/candidates`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
 export async function listCalibrationRuns(): Promise<CalibrationRun[]> {
-  const response = await fetch(`${API_URL}/calibration/runs`);
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/calibration/runs`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
@@ -143,22 +152,34 @@ export async function createCalibrationRun(
 }
 
 export async function getSubmissionEvidence(id: string): Promise<SubmissionEvidence> {
-  const response = await fetch(`${API_URL}/submissions/${id}/evidence`);
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/${id}/evidence`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
 export async function getSubmissionSlides(id: string): Promise<SubmissionSlides> {
-  const response = await fetch(`${API_URL}/submissions/${id}/slides`);
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/${id}/slides`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
 export async function getSubmissionAudit(id: string): Promise<SubmissionAudit> {
-  const response = await fetch(`${API_URL}/submissions/${id}/audit`);
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/${id}/audit`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
 export async function getDashboard(): Promise<DashboardRow[]> {
-  const response = await fetch(`${API_URL}/submissions/dashboard`);
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/dashboard`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseOrThrow(response);
 }
 
@@ -211,8 +232,10 @@ export class RubricMismatchError extends Error {
 }
 
 export async function getComparison(ids: string[]): Promise<ComparisonResponse> {
+  const token = await getAccessToken();
   const response = await fetch(
     `${API_URL}/submissions/compare?ids=${encodeURIComponent(ids.join(","))}`,
+    { headers: { Authorization: `Bearer ${token}` } },
   );
   if (response.status === 422) {
     const body = await response.json().catch(() => null);

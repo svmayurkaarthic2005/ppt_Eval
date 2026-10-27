@@ -1,8 +1,9 @@
 import type { DashboardRow, ReliabilityLabel } from "@hackeval/types";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { ApiError, getDashboard } from "../lib/api";
+import { useAdminAuth } from "../lib/useAdminAuth";
 
 const MAX_COMPARE = 6;
 
@@ -45,6 +46,7 @@ function toCsv(rows: DashboardRow[], sectionKeys: string[]): string {
 }
 
 export default function Dashboard() {
+  const { isAdmin, loading: authLoading } = useAdminAuth();
   const [rows, setRows] = useState<DashboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -132,13 +134,15 @@ export default function Dashboard() {
     URL.revokeObjectURL(url);
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <main className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-slate-50">
         <p className="text-slate-500">Loading...</p>
       </main>
     );
   }
+
+  if (!isAdmin) return <Navigate to="/login" replace />;
 
   if (error) {
     return (
