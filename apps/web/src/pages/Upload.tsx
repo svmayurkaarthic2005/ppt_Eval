@@ -538,7 +538,7 @@ export default function Upload() {
           )}
 
           {step < 4 && (
-            <div className="sticky bottom-0 mt-8 flex items-center justify-between border-t border-slate-100 pt-5">
+            <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5">
               {step > 1 ? (
                 <button
                   type="button"
