@@ -22,6 +22,7 @@ import {
   getSubmissionSlides,
   reEvaluateSubmission,
 } from "../lib/api";
+import { truncateAtWord } from "../lib/text";
 import { estimateRemaining } from "../lib/timing";
 import { useAdminAuth } from "../lib/useAdminAuth";
 
@@ -96,7 +97,7 @@ function EvidencePanel({ criterion }: { criterion: CriterionEvidenceView }) {
 
 function CriterionRow({ criterion }: { criterion: CriterionEvidenceView }) {
   const [expanded, setExpanded] = useState(false);
-  const oneLineRationale = criterion.rationale.split("\n")[0].slice(0, 140);
+  const oneLineRationale = truncateAtWord(criterion.rationale.split("\n")[0], 140);
 
   return (
     <div className="border-b border-slate-100 py-2.5 last:border-b-0">
@@ -113,7 +114,14 @@ function CriterionRow({ criterion }: { criterion: CriterionEvidenceView }) {
           {Number(criterion.llm_score.toFixed(2))}/{Number(criterion.max_score.toFixed(2))}
         </span>
       </button>
-      {expanded && <EvidencePanel criterion={criterion} />}
+      {expanded && (
+        <>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+            {criterion.rationale}
+          </p>
+          <EvidencePanel criterion={criterion} />
+        </>
+      )}
     </div>
   );
 }

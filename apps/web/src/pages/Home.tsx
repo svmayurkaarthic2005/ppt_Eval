@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import RankingTable from "../components/RankingTable";
 import { useConfirm } from "../components/ConfirmDialog";
 import { downloadCsv, rankingRowsToCsv } from "../lib/csv";
+import { truncateAtWord } from "../lib/text";
 import { useAdminAuth } from "../lib/useAdminAuth";
 import {
   ApiError,
@@ -983,7 +984,7 @@ export default function Home() {
                   <h3 className="font-bold text-slate-800 text-sm sm:text-base">{ps.title}</h3>
                   <p className="text-xs text-slate-500">
                     {ps.reference_text
-                      ? ps.reference_text.slice(0, 100) + (ps.reference_text.length > 100 ? "..." : "")
+                      ? truncateAtWord(ps.reference_text, 100)
                       : "No teams evaluated yet for this domain."}
                   </p>
                 </div>
