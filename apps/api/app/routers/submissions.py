@@ -26,9 +26,7 @@ from app.evidence.traceability import (
     get_submission_slides,
 )
 from app.extraction import (
-    ALLOWED_DECK_TYPES,
     MAX_DECK_BYTES,
-    MAX_PPTX_BYTES,
     MAX_PROBLEM_STATEMENT_BYTES,
     extract_text,
     is_usable,

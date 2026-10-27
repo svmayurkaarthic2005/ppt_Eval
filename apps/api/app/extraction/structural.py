@@ -16,9 +16,8 @@ import zipfile
 from dataclasses import dataclass
 from uuid import UUID
 
-import pymupdf
-
 import asyncpg
+import pymupdf
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.exc import PackageNotFoundError
@@ -262,7 +261,9 @@ def parse_pdf(content: bytes) -> list[ParsedSlide]:
 
     parsed_slides: list[ParsedSlide] = []
     try:
-        for page_number, page in enumerate(pdf, start=1):
+        for page_index in range(pdf.page_count):
+            page_number = page_index + 1
+            page = pdf[page_index]
             raw_text = page.get_text()
             title = _derive_pdf_page_title(raw_text, page_number)
             parsed_slides.append(
