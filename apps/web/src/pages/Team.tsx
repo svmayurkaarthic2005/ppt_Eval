@@ -1015,18 +1015,26 @@ export default function Team() {
     let active = true;
     setError(null);
 
-    Promise.all([
-      getSubmission(id),
-      getSubmissionEvidence(id),
-      getSubmissionAudit(id),
-      getSubmissionSlides(id),
-    ])
-      .then(([s, e, a, sl]) => {
+    // Load submission first — unblocks the page render immediately.
+    // Evidence, audit, and slides are fetched in parallel afterwards;
+    // they fill in progressively rather than gating the initial paint.
+    getSubmission(id)
+      .then((s) => {
         if (!active) return;
         setSubmission(s);
-        setEvidence(e);
-        setAudit(a);
-        setSlides(sl);
+        // Now fetch the heavier payloads in parallel without blocking the page.
+        Promise.all([
+          getSubmissionEvidence(id),
+          getSubmissionAudit(id),
+          getSubmissionSlides(id),
+        ])
+          .then(([e, a, sl]) => {
+            if (!active) return;
+            setEvidence(e);
+            setAudit(a);
+            setSlides(sl);
+          })
+          .catch(() => {/* non-fatal: evidence/slides are best-effort */});
       })
       .catch((err) => {
         if (!active) return;
@@ -1037,6 +1045,7 @@ export default function Team() {
       active = false;
     };
   }, [id]);
+
 
   // Real-time status: poll while the submission is still mid-pipeline,
   // OR while it is scored-but-stale (a re-score job is running in the
@@ -1102,7 +1111,7 @@ export default function Team() {
     );
   }
 
-  if (!submission || !evidence) {
+  if (!submission) {
     return (
       <main className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-slate-50">
         <p className="text-slate-500">Loading...</p>
@@ -1110,10 +1119,13 @@ export default function Team() {
     );
   }
 
-  const sections = evidence.criteria.reduce<Record<string, CriterionEvidenceView[]>>((acc, c) => {
+  // evidence is null while still loading (fetched after submission) — use
+  // empty fallback so the page renders immediately and sections fill in.
+  const sections = (evidence?.criteria ?? []).reduce<Record<string, CriterionEvidenceView[]>>((acc, c) => {
     (acc[c.section_key] ??= []).push(c);
     return acc;
   }, {});
+
 
   const context = submission.submission_context;
 

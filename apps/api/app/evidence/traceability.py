@@ -150,53 +150,74 @@ async def get_submission_evidence(conn: asyncpg.Connection, submission_id: UUID)
     flagged_descriptions = [row["description"] for row in flagged_rows]
 
     def _is_flagged(criterion_key: str) -> bool:
-        # The flag's description is free text ("Criterion {key} ({name})
-        # could not be scored..."), set once in app.llm.client -- matched by
-        # that exact prefix rather than a schema column, since adding one
-        # just for this would be a bigger change than this check warrants.
         prefix = f"Criterion {criterion_key} "
         return any(d.startswith(prefix) for d in flagged_descriptions)
 
-    storage = get_service_client().storage.from_("rendered-slides")
-    criteria_out: list[CriterionEvidenceOut] = []
+    # ── Bulk fetch all citation rows in ONE query (was N=20 sequential fetches) ──
+    all_citation_rows = await conn.fetch(
+        """
+        select e.criterion_key, e.observation, e.evidence_type,
+               sl.slide_number, sl.raw_text, sl.image_storage_paths
+        from evidence_items e
+        join slides sl on sl.id = e.slide_id
+        where e.submission_id = $1 and e.slide_id is not null
+        order by e.criterion_key, sl.slide_number
+        """,
+        submission_id,
+    )
+    # Group citation rows by criterion_key
+    citations_by_criterion: dict[str, list[dict]] = {}
+    for c in all_citation_rows:
+        citations_by_criterion.setdefault(c["criterion_key"], []).append(c)
 
+    # ── Bulk fetch fallback log rows for criteria with no citations ──
+    all_fallback_rows = await conn.fetch(
+        """
+        select distinct on (criterion_key) criterion_key, raw_llm_output
+        from evidence_items
+        where submission_id = $1 and slide_id is null
+        order by criterion_key, created_at desc
+        """,
+        submission_id,
+    )
+    fallback_by_criterion: dict[str, dict] = {
+        r["criterion_key"]: r["raw_llm_output"] for r in all_fallback_rows
+    }
+
+    # ── Collect all unique image paths and sign them in one pass ──
+    all_paths: list[str] = []
+    seen: set[str] = set()
+    for c in all_citation_rows:
+        for p in (c["image_storage_paths"] or []):
+            if p not in seen:
+                seen.add(p)
+                all_paths.append(p)
+
+    storage = get_service_client().storage.from_("rendered-slides")
+    signed_url_cache: dict[str, str] = {}
+    for path in all_paths:
+        urls = _sign_image_urls(storage, [path])
+        if urls:
+            signed_url_cache[path] = urls[0]
+
+    criteria_out: list[CriterionEvidenceOut] = []
     for row in criterion_rows:
-        citation_rows = await conn.fetch(
-            """
-            select e.observation, e.evidence_type, sl.slide_number, sl.raw_text, sl.image_storage_paths
-            from evidence_items e
-            join slides sl on sl.id = e.slide_id
-            where e.submission_id = $1 and e.criterion_key = $2 and e.slide_id is not null
-            order by sl.slide_number
-            """,
-            submission_id,
-            row["criterion_key"],
-        )
+        raw_citations = citations_by_criterion.get(row["criterion_key"], [])
         citations = [
             {
                 "slide_number": c["slide_number"],
                 "evidence_type": c["evidence_type"],
                 "observation": c["observation"],
                 "raw_text": c["raw_text"],
-                "image_urls": _sign_image_urls(storage, c["image_storage_paths"] or []),
+                "image_urls": [
+                    signed_url_cache[p]
+                    for p in (c["image_storage_paths"] or [])
+                    if p in signed_url_cache
+                ],
             }
-            for c in citation_rows
+            for c in raw_citations
         ]
-
-        fallback = None
-        if not citations:
-            log_row = await conn.fetchrow(
-                """
-                select raw_llm_output from evidence_items
-                where submission_id = $1 and criterion_key = $2 and slide_id is null
-                order by created_at desc
-                limit 1
-                """,
-                submission_id,
-                row["criterion_key"],
-            )
-            fallback = log_row["raw_llm_output"] if log_row else None
-
+        fallback = fallback_by_criterion.get(row["criterion_key"]) if not citations else None
         criteria_out.append(
             build_criterion_evidence(
                 row["section_key"],
@@ -211,6 +232,7 @@ async def get_submission_evidence(conn: asyncpg.Connection, submission_id: UUID)
         )
 
     return SubmissionEvidenceOut(submission_id=submission_id, criteria=criteria_out)
+
 
 
 async def get_submission_slides(conn: asyncpg.Connection, submission_id: UUID) -> SubmissionSlidesOut:
