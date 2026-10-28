@@ -269,6 +269,19 @@ export async function deleteTeam(
   return parseOrThrow(response);
 }
 
+export async function renameTeam(
+  teamId: string,
+  name: string,
+): Promise<{ team_id: string; team_name: string }> {
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/teams/${teamId}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  return parseOrThrow(response);
+}
+
 export async function deleteSubmission(
   submissionId: string,
 ): Promise<{ deleted: boolean; submission_id: string; team_id: string }> {

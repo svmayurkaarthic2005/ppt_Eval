@@ -21,6 +21,7 @@ import {
   getSubmissionEvidence,
   getSubmissionSlides,
   reEvaluateSubmission,
+  renameTeam,
 } from "../lib/api";
 import { truncateAtWord } from "../lib/text";
 import { estimateRemaining } from "../lib/timing";
@@ -989,7 +990,43 @@ export default function Team() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reEvaluating, setReEvaluating] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
+
+  function startEditingName() {
+    setNameDraft(submission?.team_name ?? "");
+    setNameError(null);
+    setEditingName(true);
+  }
+
+  async function handleSaveName() {
+    if (!submission) return;
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      setNameError("Team name cannot be empty.");
+      return;
+    }
+    if (trimmed === submission.team_name) {
+      setEditingName(false);
+      return;
+    }
+    setSavingName(true);
+    setNameError(null);
+    try {
+      await renameTeam(submission.team_id, trimmed);
+      setSubmission({ ...submission, team_name: trimmed });
+      setEditingName(false);
+    } catch (err) {
+      setNameError(
+        err instanceof ApiError ? err.message : "Could not rename team.",
+      );
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   async function handleReEvaluate() {
     if (!id) return;
@@ -1157,9 +1194,55 @@ export default function Team() {
             </svg>
             Back to Rankings
           </Link>
-          <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
-            {submission.team_name || `Submission ${submission.id}`}
-          </h1>
+          {editingName ? (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSaveName();
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
+                  className="rounded-lg border border-indigo-300 px-2.5 py-1 text-2xl font-bold text-slate-900 outline-none ring-indigo-500/30 focus:ring-4 sm:text-3xl"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveName}
+                  disabled={savingName}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {savingName ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingName(false)}
+                  disabled={savingName}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 transition hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+              </div>
+              {nameError && <p className="text-xs text-red-600">{nameError}</p>}
+            </div>
+          ) : (
+            <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+              {submission.team_name || `Submission ${submission.id}`}
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={startEditingName}
+                  title="Edit team name"
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+              )}
+            </h1>
+          )}
           {submission.problem_statement_title && (
             <p className="mt-1 text-sm text-slate-600">
               <span className="font-semibold text-slate-500">Problem Statement:</span>{" "}
@@ -1196,7 +1279,7 @@ export default function Team() {
         </div>
 
         <div className="flex shrink-0 flex-col sm:flex-row items-start sm:items-center gap-3">
-          {evidence.criteria.length > 0 && (
+          {evidence && evidence.criteria.length > 0 && (
             <div className="stitch-card flex items-center gap-3.5 rounded-xl px-4 py-2.5 border border-slate-200/80">
               <div className="text-right">
                 <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">Total Score</p>

@@ -89,13 +89,22 @@ def get_db_pool(request: Request) -> asyncpg.Pool:
 
 
 async def _get_or_create_team(conn: asyncpg.Connection, owner_user_id: str, name: str) -> UUID:
-    existing = await conn.fetchrow("select id from teams where owner_user_id = $1", owner_user_id)
+    """Teams used to each have their own login, so matching on owner_user_id
+    was enough to find "this team's" row. Now a single admin account uploads
+    on behalf of every team, so owner_user_id is identical on every call --
+    matching on it alone collapsed every submission onto whichever team was
+    created first. Match on the (trimmed, case-insensitive) name instead:
+    the same name reuses that team, a new name creates a new one -- the
+    "duplicate team name" case is exactly the reuse case."""
+    existing = await conn.fetchrow(
+        "select id from teams where lower(trim(name)) = lower(trim($1))", name
+    )
     if existing is not None:
         return existing["id"]
 
     created = await conn.fetchrow(
         "insert into teams (name, owner_user_id) values ($1, $2) returning id",
-        name,
+        name.strip(),
         owner_user_id,
     )
     return created["id"]
