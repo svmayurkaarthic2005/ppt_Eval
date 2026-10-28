@@ -470,31 +470,109 @@ def _is_software_first_project(context: SubmissionContext | None, deck_text: str
     return classify_project_scope(context, problem_statement_text, deck_text) == "software_only"
 
 
-def _software_cost_analysis(context: SubmissionContext | None = None, deck_text: str = "") -> CostAnalysis:
-    """Constructs cost analysis for a genuine software-only solution without fictitious ₹0 or chemical costs."""
-    return CostAnalysis(
-        analysis_status="not_applicable",
-        project_scope="software_only",
-        currency="INR",
-        deck_declared_budget=None,
-        itemized_declared_cost=None,
-        total_declared_cost=None,
-        physical_hardware_capex=0.0,
-        chemical_consumables_opex=0.0,
-        software_cloud_opex=0.0,
-        total_estimated_cost=None,
-        cost_difference=None,
-        missing_components_count=0,
-        affordability_verdict="not_applicable",
-        affordability_score_recommendation=None,
-        affordability_analysis=(
+_INR_PATTERN = re.compile(
+    r"(?:rs\.?\s*|inr\s*|₹\s*)"
+    r"([\d,]+(?:\.\d+)?)"
+    r"(?:\s*(?:to|-|–)\s*(?:rs\.?\s*|inr\s*|₹\s*)?([\d,]+(?:\.\d+)?))?\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_declared_software_budget(deck_text: str) -> float | None:
+    """Best-effort extraction of the highest plausible total budget figure the
+    team declared in their deck for a software-only project.  Returns the
+    upper bound of a range (e.g. '4,500 – 12,000' → 12000) or the single
+    value, whichever is larger, up to a sanity cap of ₹10 crore."""
+    best: float | None = None
+    for m in _INR_PATTERN.finditer(deck_text):
+        try:
+            lo = float(m.group(1).replace(",", ""))
+            hi = float(m.group(2).replace(",", "")) if m.group(2) else lo
+            val = max(lo, hi)
+            if val > 10_00_00_000:  # >10 crore → likely a revenue/market figure, skip
+                continue
+            if best is None or val > best:
+                best = val
+        except (TypeError, ValueError):
+            continue
+    return best
+
+
+def _software_cost_analysis(
+    context: SubmissionContext | None = None,
+    deck_text: str = "",
+    declared_budget: float | None = None,
+) -> CostAnalysis:
+    """Constructs cost analysis for a genuine software-only solution.
+
+    If the team declared a software cost breakdown in their deck (hosting,
+    APIs, cloud, etc.) that budget is captured and an affordability verdict
+    + score is produced.  Only when no cost figure at all is detectable does
+    the result fall back to 'not_applicable / unscored'.
+    """
+    # Try to pull a declared total from the deck when not already provided
+    if declared_budget is None:
+        declared_budget = _extract_declared_software_budget(deck_text)
+
+    # Determine affordability verdict & score from the declared software budget
+    if declared_budget is not None and declared_budget > 0:
+        software_cloud_opex = round(declared_budget, 2)
+        if declared_budget <= 15_000:
+            verdict: AffordabilityVerdict = "highly_affordable"
+            score: float | None = 1.9
+            analysis_text = (
+                f"This is a software/AI-first project. No physical BOM is required. "
+                f"The team declared a total operational budget of approximately \u20b9{declared_budget:,.0f}, "
+                f"which is highly affordable for a student prototype and well within realistic cloud/hosting cost ranges. "
+                f"Physical hardware CAPEX is not applicable. Affordability verdict: highly affordable."
+            )
+        elif declared_budget <= 50_000:
+            verdict = "moderate_realistic"
+            score = 1.6
+            analysis_text = (
+                f"This is a software/AI-first project. No physical BOM is required. "
+                f"The team declared a total operational budget of approximately \u20b9{declared_budget:,.0f}. "
+                f"This is a moderate, realistic budget for the stated software architecture. "
+                f"Affordability verdict: moderate and realistic for a prototype."
+            )
+        else:
+            verdict = "expensive_high_barrier"
+            score = 0.9
+            analysis_text = (
+                f"This is a software/AI-first project. No physical BOM is required. "
+                f"The team declared a total operational budget of approximately \u20b9{declared_budget:,.0f}, "
+                f"which is high for a student prototype and may present a funding barrier. "
+                f"Affordability verdict: expensive / high barrier for prototype stage."
+            )
+    else:
+        software_cloud_opex = 0.0
+        verdict = "not_applicable"
+        score = None
+        analysis_text = (
             "This solution is identified as a software/AI-first project. A physical bill of materials "
             "(chemical reagents, industrial process machinery, lab hardware) is not applicable to its "
             "implementation architecture. Cloud compute, hosting, and API costs scale dynamically with "
             "usage volume and are omitted from this physical BOM check. This non-applicable physical status "
             "does not indicate that implementation is zero-cost or guaranteed affordable; software operating "
             "expenses must be evaluated based on projected deployment scale."
-        ),
+        )
+
+    return CostAnalysis(
+        analysis_status="not_applicable",
+        project_scope="software_only",
+        currency="INR",
+        deck_declared_budget=declared_budget,
+        itemized_declared_cost=declared_budget,
+        total_declared_cost=declared_budget,
+        physical_hardware_capex=0.0,
+        chemical_consumables_opex=0.0,
+        software_cloud_opex=software_cloud_opex,
+        total_estimated_cost=None,
+        cost_difference=None,
+        missing_components_count=0,
+        affordability_verdict=verdict,
+        affordability_score_recommendation=score,
+        affordability_analysis=analysis_text,
         components=[],
     )
 
@@ -672,6 +750,9 @@ async def generate_cost_analysis(
     scope = classify_project_scope(context, problem_statement_text, deck_text)
 
     # A software-first project should not be evaluated by the physical BOM prompt.
+    # But we still extract any declared software budget from the deck text so the
+    # team gets an affordability verdict + score for the costs they DID declare
+    # (hosting, AI APIs, cloud), rather than a blanket N/A with no score.
     if scope == "software_only":
         return _software_cost_analysis(context=context, deck_text=deck_text)
 
