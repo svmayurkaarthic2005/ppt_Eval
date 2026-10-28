@@ -183,6 +183,18 @@ export async function getDashboard(): Promise<DashboardRow[]> {
   return parseOrThrow(response);
 }
 
+/** Public aggregate counts for the leaderboard's stat cards -- unlike
+ * getDashboard(), this carries no per-team detail, so it works for general
+ * (non-admin) viewers too. */
+export async function getSubmissionStats(): Promise<{
+  total: number;
+  scored: number;
+  in_progress: boolean;
+}> {
+  const response = await fetch(`${API_URL}/submissions/stats`);
+  return parseOrThrow(response);
+}
+
 export async function getOverallRanking(): Promise<RankingRow[]> {
   const response = await fetch(`${API_URL}/rankings/overall`);
   return parseOrThrow(response);

@@ -315,6 +315,20 @@ async def trigger_stage2_selection(
     return {"selected_submission_ids": selected}
 
 
+@router.get("/stats")
+async def get_submission_stats(pool: asyncpg.Pool = Depends(get_db_pool)) -> dict[str, int | bool]:
+    """Aggregate counts for the public leaderboard's stat cards -- no
+    per-team detail, so (unlike /dashboard) this stays public. Registered
+    before /{submission_id} so "stats" is never mistaken for a submission id."""
+    async with pool.acquire() as conn:
+        total = await conn.fetchval("select count(*) from submissions")
+        scored = await conn.fetchval("select count(*) from submissions where status = 'scored'")
+        in_progress = await conn.fetchval(
+            "select exists(select 1 from submissions where status not in ('scored', 'failed'))"
+        )
+    return {"total": total, "scored": scored, "in_progress": in_progress}
+
+
 @router.get("/ranking", response_model=list[RankedSubmission])
 async def get_ranking(
     pool: asyncpg.Pool = Depends(get_db_pool),

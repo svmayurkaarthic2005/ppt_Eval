@@ -15,6 +15,7 @@ import {
   getDashboard,
   getOverallRanking,
   getRankingByProblemStatement,
+  getSubmissionStats,
   listProblemStatements,
   setManualRank,
   triggerStage2Selection,
@@ -563,17 +564,29 @@ export default function Home() {
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
   const navigate = useNavigate();
 
-  function loadDashboardStats(): Promise<boolean> {
-    return getDashboard().then((rows) => {
-      setTotalSubmitted(rows.length);
-      setTotalScored(rows.filter((r) => r.status === "scored").length);
-      setTotalAwaitingStage2(
-        rows.filter(
-          (r) => r.status === "analyzing" && r.score_source === "stage1" && !r.stage2_selected,
-        ).length,
-      );
-      return rows.some((r) => r.status !== "scored" && r.status !== "failed");
+  /** Public aggregate counts -- works for every viewer, admin or not. */
+  function loadStats(): Promise<boolean> {
+    return getSubmissionStats().then((stats) => {
+      setTotalSubmitted(stats.total);
+      setTotalScored(stats.scored);
+      return stats.in_progress;
     });
+  }
+
+  /** Per-submission detail needed only for the admin "ready for full
+   * scoring" banner -- getDashboard() is admin-gated, so this must never
+   * run for a general viewer. */
+  function loadAdminDashboardStats(): void {
+    if (!isAdmin) return;
+    getDashboard()
+      .then((rows) => {
+        setTotalAwaitingStage2(
+          rows.filter(
+            (r) => r.status === "analyzing" && r.score_source === "stage1" && !r.stage2_selected,
+          ).length,
+        );
+      })
+      .catch(() => {});
   }
 
   function loadRankings() {
@@ -596,11 +609,13 @@ export default function Home() {
 
   useEffect(() => {
     loadRankings();
-    loadDashboardStats();
+    loadStats();
+    loadAdminDashboardStats();
     loadProblemStatementsData();
 
     const interval = setInterval(() => {
-      loadDashboardStats().then((inProgress) => {
+      loadAdminDashboardStats();
+      loadStats().then((inProgress) => {
         if (inProgress) {
           loadRankings();
           loadProblemStatementsData();
@@ -608,7 +623,7 @@ export default function Home() {
       });
     }, 4000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAdmin]);
 
   async function handleTriggerStage2() {
     setTriggeringStage2(true);
@@ -620,7 +635,8 @@ export default function Home() {
           ? "Nothing new to select -- every eligible submission is already running Stage 2."
           : `Selected ${selected_submission_ids.length} submission(s) for full Stage 2 scoring. They'll finish processing in the background.`,
       );
-      loadDashboardStats();
+      loadStats();
+      loadAdminDashboardStats();
       loadRankings();
     } catch (err) {
       setStage2Message(
@@ -653,7 +669,8 @@ export default function Home() {
         await deleteSubmission(row.submission_id);
       }
       loadRankings();
-      loadDashboardStats();
+      loadStats();
+      loadAdminDashboardStats();
       loadProblemStatementsData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete team");
@@ -668,7 +685,8 @@ export default function Home() {
     try {
       await deleteProblemStatement(id);
       loadRankings();
-      loadDashboardStats();
+      loadStats();
+      loadAdminDashboardStats();
       loadProblemStatementsData();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to delete problem statement");
@@ -1052,7 +1070,8 @@ export default function Home() {
         onRemoved={() => {
           loadProblemStatementsData();
           loadRankings();
-          loadDashboardStats();
+          loadStats();
+          loadAdminDashboardStats();
         }}
       />
     </main>
