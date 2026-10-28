@@ -268,7 +268,7 @@ export default function Dashboard() {
           <button
             type="button"
             onClick={handleCompare}
-            className="rounded-full bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-indigo-600/30 transition hover:bg-indigo-700"
+            className="rounded-full bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-lg transition hover:bg-indigo-700"
           >
             Compare {selected.size} teams
           </button>

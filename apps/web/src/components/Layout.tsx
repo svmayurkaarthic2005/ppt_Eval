@@ -21,12 +21,12 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/70 stitch-gradient-mesh text-slate-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50/70 text-slate-900 flex flex-col font-sans">
       <header className="sticky top-0 z-50 stitch-glass border-b border-slate-200/80 transition-all">
         <nav className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 py-3">
           {/* Brand */}
           <NavLink to="/" className="group flex shrink-0 items-center gap-2.5 transition">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-600 text-sm font-extrabold text-white shadow-md shadow-indigo-600/25 transition group-hover:scale-105 group-hover:shadow-indigo-600/40">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-sm font-extrabold text-white">
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>

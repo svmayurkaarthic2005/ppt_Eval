@@ -406,7 +406,7 @@ export default function AdminCalibration() {
                   type="button"
                   disabled={!canSubmit || submitting}
                   onClick={handleSubmit}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting ? (
                     <>
@@ -430,7 +430,7 @@ export default function AdminCalibration() {
 
       {/* Latest Run Results Banner */}
       {result && (
-        <div className="overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/40 p-6 shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-indigo-200 bg-indigo-50/40 p-6">
           <div className="flex items-center gap-2 text-indigo-700">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-bold">
               ✓

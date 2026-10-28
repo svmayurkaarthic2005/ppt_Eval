@@ -227,7 +227,7 @@ function SectionBreakdown({ sectionKey, criteria }: { sectionKey: string; criter
         <div className="flex items-center gap-3">
           <div className="w-24 h-2 rounded-full bg-slate-100 overflow-hidden hidden sm:block">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-600"
+              className="h-full rounded-full bg-indigo-600"
               style={{ width: `${Math.min(100, Math.max(0, scorePct))}%` }}
             />
           </div>
@@ -287,14 +287,14 @@ function AcademicBenchmarkSection({
   }
 
   return (
-    <section className="stitch-card overflow-hidden rounded-2xl border-indigo-200/90 bg-gradient-to-br from-white via-indigo-50/20 to-sky-50/25 p-5 sm:p-6 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-indigo-100 pb-4">
+    <section className="stitch-card overflow-hidden rounded-xl border border-slate-200/80 p-5 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 px-3 py-0.5 text-xs font-bold text-indigo-800">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-0.5 text-xs font-bold text-indigo-700 border border-indigo-200/70">
               IEEE &middot; arXiv &middot; CrossRef
             </span>
-            <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-semibold text-purple-800">
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
               Peer-Reviewed SOTA Analysis
             </span>
           </div>
@@ -311,7 +311,7 @@ function AcademicBenchmarkSection({
             type="button"
             onClick={handleAnalyze}
             disabled={loading}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white transition-colors hover:bg-indigo-700 disabled:opacity-50"
           >
             {loading ? (
               <>
@@ -708,15 +708,15 @@ function CostAffordabilitySection({
   }
 
   return (
-    <section className="stitch-card overflow-hidden rounded-2xl border-emerald-200/90 bg-gradient-to-br from-white via-emerald-50/20 to-teal-50/25 p-5 sm:p-6 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-emerald-100 pb-4">
+    <section className="stitch-card overflow-hidden rounded-xl border border-slate-200/80 p-5 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-xs font-bold ${statusConfig.color}`}>
               <span className={`h-2 w-2 rounded-full ${statusConfig.dot}`} />
               {statusConfig.label}
             </span>
-            <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-xs font-semibold text-teal-800">
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700">
               Deterministic Financial Model
             </span>
           </div>
@@ -733,7 +733,7 @@ function CostAffordabilitySection({
             type="button"
             onClick={handleAnalyze}
             disabled={loading}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-600/25 transition-all hover:scale-[1.02] hover:shadow-emerald-600/35 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
           >
             {loading ? (
               <>
@@ -1175,7 +1175,7 @@ export default function Team() {
 
         <div className="flex shrink-0 flex-col sm:flex-row items-start sm:items-center gap-3">
           {evidence.criteria.length > 0 && (
-            <div className="stitch-card flex items-center gap-3.5 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/40 px-4 py-2.5 shadow-sm border border-indigo-200/80">
+            <div className="stitch-card flex items-center gap-3.5 rounded-xl px-4 py-2.5 border border-slate-200/80">
               <div className="text-right">
                 <p className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700">Total Score</p>
                 <div className="flex items-baseline gap-1">
@@ -1187,7 +1187,7 @@ export default function Team() {
                   </span>
                 </div>
               </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-xs font-black text-white shadow-md shadow-indigo-600/25">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-xs font-black text-white">
                 {Math.round(
                   (evidence.criteria.reduce((s, c) => s + c.llm_score, 0) /
                     (evidence.criteria.reduce((s, c) => s + c.max_score, 0) || 1)) *
@@ -1242,7 +1242,7 @@ export default function Team() {
             type="button"
             onClick={handleReEvaluate}
             disabled={reEvaluating}
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-amber-600/25 transition hover:bg-amber-700 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-amber-700 disabled:opacity-50"
           >
             {reEvaluating ? (
               <>

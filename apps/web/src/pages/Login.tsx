@@ -34,10 +34,10 @@ export default function Login() {
   }
 
   return (
-    <main className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-slate-100 px-4 py-12">
+    <main className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-slate-50 px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-600 text-white shadow-md shadow-indigo-600/25">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-white">
             <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 11c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm0 0c-3.314 0-6 1.79-6 4v2h12v-2c0-2.21-2.686-4-6-4z" />
             </svg>
@@ -86,7 +86,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={submitting}
-            className="mt-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="mt-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             {submitting ? "Signing in..." : "Sign In"}
           </button>

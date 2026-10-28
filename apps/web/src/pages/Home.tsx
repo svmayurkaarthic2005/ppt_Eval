@@ -35,39 +35,30 @@ function StatCard({
   label,
   value,
   icon,
-  gradient,
   subtext,
 }: {
   label: string;
   value: number | null;
   icon: React.ReactNode;
-  gradient: string;
   subtext?: string;
 }) {
   return (
-    <div className="stitch-card rounded-2xl p-4 sm:p-5 flex items-center justify-between relative overflow-hidden group">
-      <div className="flex items-center gap-4">
-        <div
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-md ${gradient} transition-transform group-hover:scale-105`}
-        >
-          {icon}
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-          <div className="flex items-baseline gap-2 mt-0.5">
-            <span className="text-2xl sm:text-3xl font-extrabold tracking-tight tabular-nums text-slate-900">
-              {value === null ? (
-                <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-200" />
-              ) : (
-                value
-              )}
-            </span>
-            {subtext && <span className="text-xs font-medium text-slate-600">{subtext}</span>}
-          </div>
-        </div>
-      </div>
-      <div className="hidden sm:block absolute right-2 -bottom-2 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity">
+    <div className="stitch-card rounded-xl border border-slate-200/80 p-4 sm:p-5 flex items-center gap-4">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
         {icon}
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+        <div className="flex items-baseline gap-2 mt-0.5">
+          <span className="text-2xl sm:text-3xl font-bold tracking-tight tabular-nums text-slate-900">
+            {value === null ? (
+              <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-200" />
+            ) : (
+              value
+            )}
+          </span>
+          {subtext && <span className="text-xs font-medium text-slate-600">{subtext}</span>}
+        </div>
       </div>
     </div>
   );
@@ -128,14 +119,14 @@ function EmptyState({
           <button
             type="button"
             onClick={onActionClick}
-            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
+            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700"
           >
             {actionText}
           </button>
         ) : (
           <Link
             to={actionTo}
-            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/20 transition hover:bg-indigo-700"
+            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700"
           >
             {actionText}
           </Link>
@@ -191,9 +182,9 @@ function AddProblemStatementModal({
         className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden transform transition-all"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-indigo-50/50 to-purple-50/50">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-white">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
               </svg>
@@ -262,7 +253,7 @@ function AddProblemStatementModal({
             <button
               type="submit"
               disabled={submitting || !title.trim()}
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-700 transition disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-xs font-bold text-white hover:bg-indigo-700 transition disabled:opacity-50"
             >
               {submitting ? (
                 <>
@@ -335,9 +326,9 @@ function RemoveProblemStatementModal({
         className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden transform transition-all"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-red-50/50 to-orange-50/50">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-600 text-white shadow-md shadow-red-600/25">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-600 text-white">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
@@ -430,7 +421,7 @@ function RemoveProblemStatementModal({
             <button
               type="submit"
               disabled={deleting || !selectedId}
-              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2 text-xs font-bold text-white shadow-md shadow-red-600/25 hover:bg-red-700 transition disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2 text-xs font-bold text-white hover:bg-red-700 transition disabled:opacity-50"
             >
               {deleting ? (
                 <>
@@ -803,7 +794,7 @@ export default function Home() {
 
               <Link
                 to="/upload"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.02] hover:shadow-indigo-600/35"
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-xs sm:text-sm font-bold text-white transition-colors hover:bg-indigo-700"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -842,7 +833,7 @@ export default function Home() {
             type="button"
             onClick={handleTriggerStage2}
             disabled={triggeringStage2}
-            className="rounded-xl bg-amber-600 px-4 py-2 text-xs sm:text-sm font-bold text-white shadow-md shadow-amber-600/25 transition hover:bg-amber-700 disabled:opacity-60"
+            className="rounded-xl bg-amber-600 px-4 py-2 text-xs sm:text-sm font-bold text-white transition hover:bg-amber-700 disabled:opacity-60"
           >
             {triggeringStage2 ? "Evaluating..." : "Run Full Scoring"}
           </button>
@@ -861,9 +852,8 @@ export default function Home() {
           label="Teams Submitted"
           value={totalSubmitted}
           subtext="Total decks registered"
-          gradient="bg-gradient-to-br from-indigo-500 to-indigo-700"
           icon={
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-6 w-6">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -876,9 +866,8 @@ export default function Home() {
           label="Decks Fully Scored"
           value={totalScored}
           subtext="Calibrated by AI jury"
-          gradient="bg-gradient-to-br from-emerald-500 to-teal-700"
           icon={
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-6 w-6">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           }
@@ -887,9 +876,8 @@ export default function Home() {
           label="Active Problem Statements"
           value={totalProblemStatements}
           subtext="Domain tracks evaluated"
-          gradient="bg-gradient-to-br from-purple-500 to-pink-600"
           icon={
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-6 w-6">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -1041,7 +1029,7 @@ export default function Home() {
           <button
             type="button"
             onClick={handleCompare}
-            className="pointer-events-auto rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3.5 text-sm font-bold text-white shadow-xl shadow-indigo-600/30 transition-all hover:scale-105 hover:shadow-indigo-600/40 flex items-center gap-2"
+            className="pointer-events-auto rounded-full bg-indigo-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg transition-colors hover:bg-indigo-700 flex items-center gap-2"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />

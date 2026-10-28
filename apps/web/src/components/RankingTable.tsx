@@ -11,9 +11,9 @@ const RELIABILITY_COLORS: Record<ReliabilityLabel, string> = {
 };
 
 const TOP_RANK_STYLES: Record<number, string> = {
-  1: "bg-gradient-to-br from-amber-400 to-yellow-500 text-amber-950 shadow-sm shadow-amber-500/30",
-  2: "bg-gradient-to-br from-slate-200 to-slate-400 text-slate-900 shadow-sm",
-  3: "bg-gradient-to-br from-amber-600 to-orange-700 text-white shadow-sm shadow-amber-700/20",
+  1: "bg-amber-400 text-amber-950",
+  2: "bg-slate-300 text-slate-900",
+  3: "bg-amber-700 text-white",
 };
 
 function RankBadge({ rank }: { rank: number }) {
@@ -243,7 +243,7 @@ export default function RankingTable({
                     <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
                     <div className="hidden lg:block w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-600"
+                        className="h-full rounded-full bg-indigo-600"
                         style={{ width: `${Math.min(100, Math.max(0, scorePct))}%` }}
                       />
                     </div>

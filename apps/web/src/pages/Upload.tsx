@@ -215,7 +215,7 @@ export default function Upload() {
   if (!isAdmin) return <Navigate to="/login" replace />;
 
   return (
-    <main className="flex flex-col items-center bg-gradient-to-br from-indigo-50 via-white to-slate-100 px-4 py-12">
+    <main className="flex flex-col items-center bg-slate-50 px-4 py-12">
       <div className="w-full max-w-[640px]">
         <div className="mb-6 text-center">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 border border-emerald-200/70 mb-2">
@@ -528,7 +528,7 @@ export default function Upload() {
               <div className="flex flex-col gap-2 w-full mt-2">
                 <Link
                   to={`/team/${submission.id}`}
-                  className="rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-md shadow-indigo-600/25 transition hover:scale-[1.01]"
+                  className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs sm:text-sm font-bold text-white text-center transition-colors hover:bg-indigo-700"
                 >
                   View Team Evaluation & Deck &rarr;
                 </Link>
@@ -583,7 +583,7 @@ export default function Upload() {
                         : !!submitReason || submitting
                   }
                   onClick={() => (step < 3 ? setStep((step + 1) as 2 | 3) : handleSubmit())}
-                  className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-indigo-600/30 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+                  className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   {step < 3 ? "Continue" : submitting ? "Submitting..." : "Submit"}
                 </button>
