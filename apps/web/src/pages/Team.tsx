@@ -28,6 +28,14 @@ import { useAdminAuth } from "../lib/useAdminAuth";
 
 const TERMINAL_STATUSES = new Set(["scored", "failed"]);
 
+/** A submission is fully done (no active background job) only when it has
+ * reached a terminal status AND the stale flag is clear.  A scored+stale
+ * submission has a running stage2 re-score job we still need to track. */
+function isFullySettled(s: { status: string; is_stale?: boolean } | null | undefined): boolean {
+  if (!s) return false;
+  return TERMINAL_STATUSES.has(s.status) && !s.is_stale;
+}
+
 const SEVERITY_COLORS: Record<string, string> = {
   low: "bg-slate-100 text-slate-700",
   medium: "bg-amber-100 text-amber-800",
@@ -1030,9 +1038,11 @@ export default function Team() {
     };
   }, [id]);
 
-  // Real-time status: poll while the submission is still mid-pipeline.
+  // Real-time status: poll while the submission is still mid-pipeline,
+  // OR while it is scored-but-stale (a re-score job is running in the
+  // background and we need to detect when is_stale flips back to false).
   useEffect(() => {
-    if (!id || !submission || TERMINAL_STATUSES.has(submission.status)) return;
+    if (!id || !submission || isFullySettled(submission)) return;
     let active = true;
     const pollId = id;
 
@@ -1044,7 +1054,7 @@ export default function Team() {
       const sl = await getSubmissionSlides(pollId).catch(() => null);
       if (active && sl) setSlides(sl);
 
-      if (TERMINAL_STATUSES.has(latest.status)) {
+      if (isFullySettled(latest)) {
         if (pollRef.current) clearInterval(pollRef.current);
         const [e, a] = await Promise.all([
           getSubmissionEvidence(pollId),
@@ -1059,7 +1069,7 @@ export default function Team() {
       active = false;
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [id, submission?.status]);
+  }, [id, submission?.status, submission?.is_stale]);
 
   async function handleSubmissionUpdated(updated: Submission) {
     setSubmission(updated);
