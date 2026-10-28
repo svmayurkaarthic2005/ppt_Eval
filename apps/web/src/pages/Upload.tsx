@@ -525,6 +525,20 @@ export default function Upload() {
                 </div>
               )}
 
+              {submission.status === "analyzing" &&
+                audit?.consistency_flags.some((f) => !f.resolved && f.severity === "high") && (
+                  <div className="w-full rounded-xl bg-amber-50 p-3 text-left text-xs text-amber-800 border border-amber-200">
+                    <p className="font-semibold">This is taking longer than expected.</p>
+                    <p className="mt-1">
+                      A step in the pipeline hit an issue --{" "}
+                      {
+                        audit.consistency_flags.find((f) => !f.resolved && f.severity === "high")
+                          ?.description
+                      }
+                    </p>
+                  </div>
+                )}
+
               <div className="flex flex-col gap-2 w-full mt-2">
                 <Link
                   to={`/team/${submission.id}`}

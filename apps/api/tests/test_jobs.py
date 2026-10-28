@@ -87,6 +87,37 @@ async def test_run_worker_marks_job_failed_when_handler_raises(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_worker_flags_the_submission_when_a_job_fails(monkeypatch):
+    """Without this, a failed job (which is never retried) can leave a
+    submission silently stuck mid-pipeline forever -- the flag is what lets
+    a human (or the Upload page's stall warning) ever find out why."""
+    submission_id = uuid4()
+    conn = AsyncMock()
+    conn.fetchrow.side_effect = [
+        {"id": 7, "submission_id": submission_id, "job_type": "stage2_deep_analysis"},
+        None,
+    ]
+    pool = _make_pool(conn)
+
+    stop = asyncio.Event()
+    handler = AsyncMock(side_effect=RuntimeError("boom"))
+
+    async def fake_sleep(_seconds):
+        stop.set()
+
+    monkeypatch.setattr("app.jobs.asyncio.sleep", fake_sleep)
+
+    await run_worker(pool, {"stage2_deep_analysis": handler}, stop)
+
+    flag_calls = [c for c in conn.execute.call_args_list if "insert into consistency_flags" in c.args[0]]
+    assert len(flag_calls) == 1
+    assert "'high'" in flag_calls[0].args[0]
+    assert flag_calls[0].args[1] == submission_id
+    assert "stage2_deep_analysis" in flag_calls[0].args[2]
+    assert "boom" in flag_calls[0].args[2]
+
+
+@pytest.mark.asyncio
 async def test_run_worker_marks_job_failed_when_no_handler_registered(monkeypatch):
     submission_id = uuid4()
     conn = AsyncMock()

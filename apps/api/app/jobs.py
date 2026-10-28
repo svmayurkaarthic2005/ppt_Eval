@@ -146,3 +146,19 @@ async def run_worker(
                     job["id"],
                     str(exc),
                 )
+                # A failed job is never retried (see _requeue_stale_jobs --
+                # only 'running' jobs past STALE_AFTER_SECONDS get requeued,
+                # not 'failed' ones), so without this a submission can be
+                # left silently stuck mid-pipeline forever: 'analyzing' with
+                # no scores and no visible error, polled by the frontend
+                # indefinitely. A flag at least makes the failure visible to
+                # whoever looks at the submission next.
+                await conn.execute(
+                    """
+                    insert into consistency_flags (submission_id, flag_type, severity, description)
+                    values ($1, 'pipeline_job_failed', 'high', $2)
+                    """,
+                    job["submission_id"],
+                    f"The '{job['job_type']}' job failed: {exc}. Re-run the relevant action "
+                    "(e.g. Re-evaluate) once the underlying issue is fixed.",
+                )
