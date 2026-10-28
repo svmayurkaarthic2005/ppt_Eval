@@ -357,14 +357,27 @@ async def run_stage1_preliminary(conn: asyncpg.Connection, submission_id: UUID) 
     )
 
     # Automatically proceed to Stage 2 deep analysis so full evaluation runs end-to-end without requiring manual button click
+    await enqueue_stage2_deep_analysis(conn, submission_id)
+
+
+
+async def enqueue_stage2_deep_analysis(conn: asyncpg.Connection, submission_id: UUID) -> None:
+    """Queues a stage2_deep_analysis job unless one is already queued/running
+    for this submission -- enforced by a partial unique index on
+    jobs(submission_id) WHERE job_type = 'stage2_deep_analysis' AND status
+    IN ('queued','running'), not a check-then-insert here, which raced:
+    two callers (e.g. stage1 completing right as an admin re-run request
+    lands) could both see no active job and both insert one, giving the
+    submission two concurrent rescoring jobs that collided writing
+    criterion_scores."""
     await conn.execute(
         """
-        insert into jobs (submission_id, job_type)
-        values ($1, 'stage2_deep_analysis')
+        insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')
+        on conflict (submission_id) where job_type = 'stage2_deep_analysis' and status in ('queued', 'running')
+        do nothing
         """,
         submission_id,
     )
-
 
 
 def _first_chart_series_values(shapes: list[dict]) -> list[float] | None:
@@ -403,10 +416,7 @@ async def run_stage2_selection(conn: asyncpg.Connection, top_n: int = TOP_N_DEFA
     selected = select_for_stage2(candidates, top_n=top_n)
 
     for submission_id in selected:
-        await conn.execute(
-            "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
-            submission_id,
-        )
+        await enqueue_stage2_deep_analysis(conn, submission_id)
     return list(selected)
 
 

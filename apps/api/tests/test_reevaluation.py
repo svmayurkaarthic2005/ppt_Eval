@@ -54,7 +54,6 @@ async def test_reevaluate_submission_marks_stale_and_queues_job():
 
     mock_conn = AsyncMock()
     mock_conn.fetchrow.side_effect = [mock_row, mock_row]
-    mock_conn.fetchval.return_value = None
 
     mock_pool = MockPool(mock_conn)
 
@@ -64,15 +63,25 @@ async def test_reevaluate_submission_marks_stale_and_queues_job():
     assert res.is_stale is True
     # Verify update to is_stale=true was executed
     mock_conn.execute.assert_any_call("update submissions set is_stale = true where id = $1", sub_id)
-    # Verify job was inserted
-    mock_conn.execute.assert_any_call(
-        "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
-        sub_id,
-    )
+    # Verify the job enqueue was attempted -- idempotency against an
+    # already-active job is now a DB-level constraint (ON CONFLICT DO
+    # NOTHING), not an application-level check, so this always fires.
+    enqueue_calls = [
+        c for c in mock_conn.execute.call_args_list if "insert into jobs" in c.args[0]
+    ]
+    assert len(enqueue_calls) == 1
+    assert enqueue_calls[0].args[1] == sub_id
+    assert "on conflict" in enqueue_calls[0].args[0]
+    assert "do nothing" in enqueue_calls[0].args[0]
 
 
 @pytest.mark.asyncio
-async def test_reevaluate_submission_idempotency_does_not_duplicate_active_job():
+async def test_reevaluate_submission_does_not_check_job_state_itself():
+    """A second concurrent re-run request no longer needs (or gets) an
+    application-level "is a job already active?" check -- that race was the
+    actual bug (two concurrent requests could both pass the check before
+    either inserted). The single INSERT ... ON CONFLICT DO NOTHING here
+    relies entirely on the partial unique index to stay idempotent."""
     sub_id = uuid4()
     mock_row = {
         "id": sub_id,
@@ -94,17 +103,14 @@ async def test_reevaluate_submission_idempotency_does_not_duplicate_active_job()
 
     mock_conn = AsyncMock()
     mock_conn.fetchrow.side_effect = [mock_row, mock_row]
-    # fetchval returns 1, meaning job is ALREADY queued/running
-    mock_conn.fetchval.return_value = 1
 
     mock_pool = MockPool(mock_conn)
 
     res = await reevaluate_submission(submission_id=sub_id, pool=mock_pool)
     assert res.id == sub_id
 
-    # Verify insert into jobs was NOT called
-    for call in mock_conn.execute.call_args_list:
-        assert "insert into jobs" not in call[0][0]
+    # No SELECT ... from jobs check-then-insert -- fetchval is unused.
+    mock_conn.fetchval.assert_not_called()
 
 
 @pytest.mark.asyncio

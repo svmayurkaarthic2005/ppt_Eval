@@ -33,7 +33,12 @@ from app.extraction import (
 )
 from app.models.schemas import Submission, SubmissionContext
 from app.pipeline import extract_problem_statement
-from app.pipeline.orchestrator import RankedSubmission, get_ranked_submissions, run_stage2_selection
+from app.pipeline.orchestrator import (
+    RankedSubmission,
+    enqueue_stage2_deep_analysis,
+    get_ranked_submissions,
+    run_stage2_selection,
+)
 from app.storage_cleanup import cleanup_submission_storage
 from app.supabase_client import get_service_client
 
@@ -578,15 +583,7 @@ async def generate_benchmark_for_submission(
                 benchmark_dict,
             )
             invalidate_for_submission(submission_id)
-            active_job = await conn.fetchval(
-                "select 1 from jobs where submission_id = $1 and job_type = 'stage2_deep_analysis' and status in ('queued', 'running')",
-                submission_id,
-            )
-            if not active_job:
-                await conn.execute(
-                    "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
-                    submission_id,
-                )
+            await enqueue_stage2_deep_analysis(conn, submission_id)
         else:
             await conn.execute(
                 "update submissions set academic_benchmark = $2 where id = $1",
@@ -658,15 +655,7 @@ async def generate_cost_analysis_for_submission(
                 cost_dict,
             )
             invalidate_for_submission(submission_id)
-            active_job = await conn.fetchval(
-                "select 1 from jobs where submission_id = $1 and job_type = 'stage2_deep_analysis' and status in ('queued', 'running')",
-                submission_id,
-            )
-            if not active_job:
-                await conn.execute(
-                    "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
-                    submission_id,
-                )
+            await enqueue_stage2_deep_analysis(conn, submission_id)
         else:
             await conn.execute(
                 "update submissions set cost_analysis = $2 where id = $1",
@@ -727,16 +716,7 @@ async def reevaluate_submission(
             submission_id,
         )
         invalidate_for_submission(submission_id)
-
-        active_job = await conn.fetchval(
-            "select 1 from jobs where submission_id = $1 and job_type = 'stage2_deep_analysis' and status in ('queued', 'running')",
-            submission_id,
-        )
-        if not active_job:
-            await conn.execute(
-                "insert into jobs (submission_id, job_type) values ($1, 'stage2_deep_analysis')",
-                submission_id,
-            )
+        await enqueue_stage2_deep_analysis(conn, submission_id)
 
         row = await conn.fetchrow(
             """
