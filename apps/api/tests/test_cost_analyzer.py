@@ -52,6 +52,20 @@ def test_detect_currency():
             "We propose a deep learning neural network model. While standard drones have cameras and motors, our project is solely the software algorithm and does not build any physical hardware.",
             "software_only",
         ),
+        (
+            # Regression: "no new hardware" isn't in the curated negation
+            # phrase list, so a naive `"hardware" in text` substring check
+            # misread this team's explicit denial as a physical signal and
+            # classified a phone-photo-only AI chatbot platform as hybrid.
+            "Integrated Digital Platform and AI Chatbot",
+            [],
+            (
+                "A verified AI chatbot platform with a defect diagnosis feature: upload a phone photo of a "
+                "moulded part and get likely causes, on any machine. Works from a phone photo, no new hardware. "
+                "Tech stack: React, Node.js, MongoDB, Python FastAPI with RAG, LLM API."
+            ),
+            "software_only",
+        ),
     ],
 )
 def test_classify_project_scope_meaningful_context(

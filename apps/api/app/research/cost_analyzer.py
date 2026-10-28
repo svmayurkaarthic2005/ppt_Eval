@@ -348,6 +348,26 @@ def _is_subscription_or_cloud(name: str, category: str, notes: str) -> bool:
     return any(re.search(rf"\b{re.escape(kw)}\b", combined) for kw in _SUBSCRIPTION_KEYWORDS)
 
 
+_SCOPE_NEGATORS = ("no ", "not ", "without ", "zero ", "non-", "none of")
+
+
+def _is_negated_mention(text: str, term: str) -> bool:
+    """True only if *every* occurrence of `term` in `text` is immediately
+    preceded by a negator within a few words -- e.g. "works from a phone
+    photo, no new hardware" shouldn't count "hardware" as a physical
+    signal just because the bare substring is present. A naive `term in
+    text` check can't tell "uses an ESP32 microcontroller" (a real signal)
+    from "no new hardware" (its explicit denial)."""
+    positions = [m.start() for m in re.finditer(re.escape(term), text)]
+    if not positions:
+        return False
+    for pos in positions:
+        window = " ".join(text[max(0, pos - 40):pos].split()[-5:]) + " "
+        if not any(neg in window for neg in _SCOPE_NEGATORS):
+            return False
+    return True
+
+
 def classify_project_scope(
     context: SubmissionContext | None,
     problem_statement_text: str = "",
@@ -426,8 +446,12 @@ def classify_project_scope(
         "laboratory testing", "spectrometer", "colorimeter", "sensor", "hardware",
     )
 
-    software_hits = sum(1 for term in software_signals if term in full_text)
-    physical_hits = sum(1 for term in physical_signals if term in full_text)
+    software_hits = sum(
+        1 for term in software_signals if term in full_text and not _is_negated_mention(full_text, term)
+    )
+    physical_hits = sum(
+        1 for term in physical_signals if term in full_text and not _is_negated_mention(full_text, term)
+    )
 
     if physical_hits >= 1 and software_hits >= 1:
         return "hybrid"
