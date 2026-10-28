@@ -450,6 +450,55 @@ async def run_stage2_deep_analysis(
     ):
         return  # idempotent: already fully scored and benchmarked, never re-charge the LLM
 
+    # Second idempotency guard: a stale-flagged submission that is already
+    # fully scored (all sections × expected criteria present in criterion_scores)
+    # does not need any LLM work — only the stale flag itself needs clearing.
+    # Without this guard, every re-evaluate triggered by a benchmark/cost
+    # refresh on an already-complete submission burned a full LLM re-score
+    # pass (20 Groq calls) just to write is_stale=false at the very end.
+    if (
+        is_stale
+        and not force_rescore
+        and rescore_criteria is None
+        and submission["status"] == "scored"
+        and submission["academic_benchmark"] is not None
+        and submission["cost_analysis"] is not None
+    ):
+        missing_criteria = await conn.fetchval(
+            """
+            select count(*)
+            from submissions s
+            join rubric_templates rt on rt.id = s.rubric_template_id
+            cross join lateral jsonb_array_elements(rt.sections -> 'sections') as section
+            cross join lateral jsonb_array_elements(section.value -> 'criteria') as criterion
+            where s.id = $1
+              and not exists (
+                select 1 from criterion_scores cs
+                where cs.submission_id = s.id
+                  and cs.section_key = section.value ->> 'key'
+                  and cs.criterion_key = criterion.value ->> 'key'
+              )
+            """,
+            submission_id,
+        )
+        if missing_criteria == 0:
+            # All criteria already scored — just clear the stale flag and exit.
+            current_version = submission.get("evaluation_version") or 1
+            await conn.execute(
+                "update submissions set is_stale = false, evaluation_version = $2 where id = $1",
+                submission_id,
+                current_version + 1,
+            )
+            invalidate_for_submission(submission_id)
+            logger.info(
+                "submission %s: is_stale cleared without re-scoring (all %d criteria already present)",
+                submission_id,
+                await conn.fetchval(
+                    "select count(*) from criterion_scores where submission_id = $1", submission_id
+                ),
+            )
+            return
+
     template = await conn.fetchrow(
         "select id, sections from rubric_templates where id = $1", submission["rubric_template_id"]
     )
