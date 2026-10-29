@@ -115,21 +115,41 @@ KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
 
 
 def classify_by_keywords(title: str) -> SlideRole | None:
-    """Returns a role when any keyword matches the title.
-    When multiple roles match, the one with the longest matching keyword wins
-    (more specific keywords should take precedence over short ones like 'team'
-    or 'cost'). Falls back to None only when nothing matches at all, in which
-    case classify_with_llm is used.
+    """Returns a role when keywords unambiguously identify it.
+
+    Strategy: find the longest matching keyword across all roles (specificity
+    wins over shorter incidental matches).  If every matching keyword belongs
+    to the *same* role, return that role.  If two or more *different* roles
+    each have a matching keyword, return None so the LLM tiebreaker runs.
+
+    Examples
+    --------
+    "Execution Plan & Immediate Next Steps"
+        → "immediate next steps" (len 20, execution) wins; only execution
+          keywords match → SlideRole.execution  ✓
+
+    "Team & Timeline"
+        → "timeline" (len 8, timeline) is longest, but "team" (len 4,
+          execution) also matches a *different* role → None → LLM  ✓
+
+    "Our Proposed Solution"
+        → only proposed_solution keywords match → SlideRole.proposed_solution  ✓
     """
     haystack = title.lower()
+    matched_roles: set[SlideRole] = set()
     best_role: SlideRole | None = None
     best_len = 0
     for role, keywords in KEYWORDS.items():
         for kw in keywords:
-            if kw in haystack and len(kw) > best_len:
-                best_role = role
-                best_len = len(kw)
-    return best_role
+            if kw in haystack:
+                matched_roles.add(role)
+                if len(kw) > best_len:
+                    best_role = role
+                    best_len = len(kw)
+    # Unambiguous: every matching keyword belongs to the same role
+    if len(matched_roles) == 1:
+        return best_role
+    return None
 
 
 async def classify_with_llm(title: str, raw_text: str) -> SlideRole:
