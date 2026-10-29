@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 
 import Dropzone from "../components/Dropzone";
@@ -36,6 +36,228 @@ function wordCount(text: string): number {
 function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── Evaluation stage metadata ────────────────────────────────────────────────
+const STAGE_META: Record<string, { label: string; icon: string; hint: string }> = {
+  uploaded:   { label: "Uploaded",          icon: "📤", hint: "Deck received" },
+  extracting: { label: "Extracting text",   icon: "📝", hint: "Reading slides" },
+  rendering:  { label: "Rendering slides",  icon: "🖼️",  hint: "Generating images" },
+  analyzing:  { label: "AI Evaluation",     icon: "🧠", hint: "Scoring criteria" },
+  scored:     { label: "Complete",          icon: "✅", hint: "All done" },
+};
+
+const ANALYSIS_MESSAGES = [
+  "Reading your problem statement…",
+  "Extracting key claims from slides…",
+  "Benchmarking against published research…",
+  "Evaluating technical feasibility…",
+  "Scoring innovation & impact…",
+  "Assessing financial feasibility…",
+  "Checking implementation plan…",
+  "Verifying cross-modal consistency…",
+  "Finalising evaluation scores…",
+];
+
+function EvaluationTracker({
+  submission,
+  audit,
+}: {
+  submission: import("@hackeval/types").Submission;
+  audit: import("@hackeval/types").SubmissionAudit | null;
+}) {
+  const statusIndex = STATUS_STEPS.indexOf(submission.status as import("@hackeval/types").SubmissionStatus);
+  const isAnalyzing = submission.status === "analyzing";
+  const isScored    = submission.status === "scored";
+  const isFailed    = submission.status === "failed";
+
+  // Rotating analysis messages
+  const [msgIdx, setMsgIdx] = useState(0);
+  const msgRef = useRef(0);
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const id = setInterval(() => {
+      msgRef.current = (msgRef.current + 1) % ANALYSIS_MESSAGES.length;
+      setMsgIdx(msgRef.current);
+    }, 2800);
+    return () => clearInterval(id);
+  }, [isAnalyzing]);
+
+  const criteria_scored = audit?.criteria_scored ?? null;
+  const criteria_total  = audit?.criteria_total  ?? null;
+  const pct = criteria_scored !== null && criteria_total ? Math.round((criteria_scored / criteria_total) * 100) : 0;
+
+  return (
+    <div className="flex flex-col items-center gap-5 py-2 w-full animate-slide-up">
+
+      {/* ── Central visual ───────────────────────────────── */}
+      <div className="relative flex items-center justify-center" style={{ width: 104, height: 104 }}>
+        {/* Outer slow ring */}
+        {isAnalyzing && (
+          <>
+            <div
+              className="absolute inset-0 rounded-full border-2 border-transparent animate-spin-slow"
+              style={{ borderTopColor: "#6366f1", borderRightColor: "#a78bfa" }}
+            />
+            {/* Inner reverse ring */}
+            <div
+              className="absolute rounded-full border-2 border-transparent animate-spin-reverse"
+              style={{ inset: 8, borderBottomColor: "#06b6d4", borderLeftColor: "#8b5cf6" }}
+            />
+          </>
+        )}
+
+        {/* Icon circle */}
+        <div
+          className={`relative z-10 flex h-16 w-16 items-center justify-center rounded-full text-2xl transition-all duration-500 ${
+            isScored
+              ? "bg-emerald-100 shadow-lg shadow-emerald-200"
+              : isFailed
+              ? "bg-red-100 shadow-lg shadow-red-200"
+              : "bg-indigo-50 shadow-lg shadow-indigo-100"
+          } ${
+            isAnalyzing ? "animate-ping-soft" : ""
+          }`}
+        >
+          {isScored ? "🎉" : isFailed ? "❌" : isAnalyzing ? "🧠" : "⚙️"}
+        </div>
+      </div>
+
+      {/* ── Headline ─────────────────────────────────────── */}
+      {isScored ? (
+        <div className="text-center animate-slide-up">
+          <p className="text-lg font-bold text-emerald-700">Evaluation Complete!</p>
+          <p className="mt-0.5 text-xs text-slate-500">Your deck has been fully scored.</p>
+        </div>
+      ) : isFailed ? (
+        <div className="text-center">
+          <p className="text-base font-bold text-red-600">Submission Failed</p>
+          <p className="mt-1 text-sm text-red-500">Check your problem statement and try again.</p>
+        </div>
+      ) : (
+        <div className="text-center">
+          <p className="shimmer-text text-base font-bold" key={msgIdx}>
+            {ANALYSIS_MESSAGES[msgIdx]}
+          </p>
+          {isAnalyzing && (
+            <div className="mt-1.5 flex justify-center gap-1">
+              <span className="dot-1 inline-block h-1.5 w-1.5 rounded-full bg-indigo-400" />
+              <span className="dot-2 inline-block h-1.5 w-1.5 rounded-full bg-violet-400" />
+              <span className="dot-3 inline-block h-1.5 w-1.5 rounded-full bg-cyan-400" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Criteria progress bar (only during analyzing) ── */}
+      {isAnalyzing && criteria_total !== null && (
+        <div className="w-full animate-slide-up">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] font-semibold">
+            <span className="text-slate-500">Criteria evaluated</span>
+            <span className="text-indigo-600">{criteria_scored ?? 0} / {criteria_total}</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full flow-bar transition-all duration-700"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {audit && estimateRemaining(audit) && (
+            <p className="mt-1.5 text-center text-[10px] text-slate-400">
+              ~{estimateRemaining(audit)} remaining
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Pipeline steps ───────────────────────────────── */}
+      {!isFailed && (
+        <div className="w-full rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+          <p className="mb-2.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">Pipeline</p>
+          <ol className="flex flex-col gap-0">
+            {STATUS_STEPS.map((s, i) => {
+              const reached  = statusIndex >= i;
+              const isActive = statusIndex === i && !isScored;
+              return (
+                <li key={s} className="flex items-center gap-3 py-1.5">
+                  {/* Step dot */}
+                  <span
+                    className={`relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold transition-all duration-500 ${
+                      isActive
+                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                        : reached
+                        ? "bg-emerald-500 text-white"
+                        : "bg-slate-200 text-slate-400"
+                    }`}
+                  >
+                    {isActive ? (
+                      // Pulsing glow ring on active step
+                      <>
+                        <span className="absolute inset-0 rounded-full bg-indigo-400 opacity-40 animate-ping" />
+                        <span className="relative">{i + 1}</span>
+                      </>
+                    ) : reached ? (
+                      "✓"
+                    ) : (
+                      i + 1
+                    )}
+                  </span>
+
+                  {/* Connector line */}
+                  <span
+                    className={`text-sm transition-all duration-500 ${
+                      isActive
+                        ? "font-semibold text-indigo-700"
+                        : reached
+                        ? "font-medium text-emerald-700"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {STAGE_META[s]?.icon} {STAGE_META[s]?.label}
+                  </span>
+
+                  {isActive && (
+                    <span className="ml-auto text-[10px] text-indigo-400 italic">
+                      {STAGE_META[s]?.hint}…
+                    </span>
+                  )}
+                  {reached && !isActive && (
+                    <span className="ml-auto text-[10px] text-emerald-500">done</span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+
+      {/* ── High-severity flag warning ────────────────────── */}
+      {audit?.consistency_flags.some((f) => !f.resolved && f.severity === "high") && (
+        <div className="w-full rounded-xl border border-amber-200 bg-amber-50 p-3 text-left text-xs text-amber-800 animate-slide-up">
+          <p className="font-semibold">⚠️ A pipeline step needs attention</p>
+          <p className="mt-1 text-[11px] leading-relaxed">
+            {audit.consistency_flags.find((f) => !f.resolved && f.severity === "high")?.description}
+          </p>
+        </div>
+      )}
+
+      {/* ── CTA buttons ──────────────────────────────────── */}
+      <div className="flex flex-col gap-2 w-full mt-1">
+        <Link
+          to={`/team/${submission.id}`}
+          className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white text-center transition-all hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-200"
+        >
+          {isScored ? "🎯 View Full Evaluation →" : "View Live Progress →"}
+        </Link>
+        <Link
+          to="/"
+          className="text-xs font-semibold text-slate-400 hover:text-slate-700 transition py-1 text-center"
+        >
+          ← Back to Leaderboard
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 function ProgressSteps({ step }: { step: 1 | 2 | 3 | 4 }) {
@@ -454,107 +676,9 @@ export default function Upload() {
           )}
 
           {step === 4 && submission && (
-            <div className="flex flex-col items-center gap-4 py-2 text-center">
-              <span
-                className={`flex h-12 w-12 items-center justify-center rounded-full ${
-                  submission.status === "failed" ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600"
-                }`}
-              >
-                {submission.status === "failed" ? (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-6 w-6">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-6 w-6">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </span>
-              <h2 className="font-medium text-slate-800">
-                {submission.status === "failed" ? "Submission failed" : "Submission received"}
-              </h2>
-
-              {submission.status === "failed" ? (
-                <p className="text-sm text-red-600">
-                  This submission failed during processing. Check your problem statement and try
-                  again.
-                </p>
-              ) : (
-                <ol className="flex w-full flex-col gap-2 text-left text-sm">
-                  {STATUS_STEPS.map((s) => {
-                    const reached = STATUS_STEPS.indexOf(submission.status) >= STATUS_STEPS.indexOf(s);
-                    return (
-                      <li key={s} className="flex items-center gap-2.5">
-                        <span
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] ${
-                            reached ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-400"
-                          }`}
-                        >
-                          {reached ? "✓" : ""}
-                        </span>
-                        <span className={reached ? "font-medium text-indigo-700" : "text-slate-400"}>
-                          {s}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-
-              {submission.status === "analyzing" && audit && (
-                <div className="w-full rounded-xl bg-indigo-50/70 p-3 text-center text-xs font-semibold text-indigo-800 border border-indigo-200/60">
-                  {audit.criteria_scored !== null && audit.criteria_total !== null ? (
-                    <>
-                      <div className="flex items-center justify-between text-xs mb-1.5">
-                        <span>Evaluating Criteria</span>
-                        <span>{audit.criteria_scored} / {audit.criteria_total}</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-indigo-200/60 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-indigo-600 transition-all duration-300"
-                          style={{ width: `${Math.round((audit.criteria_scored / audit.criteria_total) * 100)}%` }}
-                        />
-                      </div>
-                      {estimateRemaining(audit) && (
-                        <p className="mt-2 text-[11px] text-indigo-600">~{estimateRemaining(audit)} remaining</p>
-                      )}
-                    </>
-                  ) : (
-                    "Analyzing presentation and evaluating criteria..."
-                  )}
-                </div>
-              )}
-
-              {submission.status === "analyzing" &&
-                audit?.consistency_flags.some((f) => !f.resolved && f.severity === "high") && (
-                  <div className="w-full rounded-xl bg-amber-50 p-3 text-left text-xs text-amber-800 border border-amber-200">
-                    <p className="font-semibold">This is taking longer than expected.</p>
-                    <p className="mt-1">
-                      A step in the pipeline hit an issue --{" "}
-                      {
-                        audit.consistency_flags.find((f) => !f.resolved && f.severity === "high")
-                          ?.description
-                      }
-                    </p>
-                  </div>
-                )}
-
-              <div className="flex flex-col gap-2 w-full mt-2">
-                <Link
-                  to={`/team/${submission.id}`}
-                  className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs sm:text-sm font-bold text-white text-center transition-colors hover:bg-indigo-700"
-                >
-                  View Team Evaluation & Deck &rarr;
-                </Link>
-                <Link
-                  to="/"
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition py-1"
-                >
-                  &larr; Back to Leaderboard
-                </Link>
-              </div>
-            </div>
+            <EvaluationTracker submission={submission} audit={audit} />
           )}
+
 
           {step < 4 && (
             <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5">

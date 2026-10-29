@@ -250,6 +250,7 @@ async def _call_stage1_llm(
     payload = {
         "model": GROQ_MODEL,
         "temperature": 0,
+        "max_tokens": 512,
         "messages": [
             {"role": "system", "content": STAGE1_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},

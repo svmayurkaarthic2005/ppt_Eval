@@ -832,6 +832,7 @@ async def generate_cost_analysis(
     payload = {
         "model": GROQ_MODEL,
         "temperature": 0.1,
+        "max_tokens": 4096,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

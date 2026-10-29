@@ -282,6 +282,7 @@ Produce an evidence-grounded comparison that is relevant to the stated problem a
         payload = {
             "model": "openai/gpt-oss-120b",
             "temperature": 0.2,
+            "max_tokens": 2048,
             "messages": messages,
             "response_format": {
                 "type": "json_schema",

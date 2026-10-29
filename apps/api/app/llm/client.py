@@ -53,7 +53,7 @@ NETWORK_BACKOFF_BASE_SECONDS = 1.0
 # tokenizer dependency just to feed the rate limiter an estimate.
 CHARS_PER_TOKEN_ESTIMATE = 4
 TOKENS_PER_IMAGE_ESTIMATE = 2200
-RESPONSE_TOKEN_ESTIMATE = 300
+RESPONSE_TOKEN_ESTIMATE = 2048
 
 SYSTEM_PROMPT = (
     "You are evaluating a hackathon pitch deck against its selected problem statement and rubric, for an "
@@ -610,6 +610,7 @@ async def _call_groq(
         fallback_payload = {
             "model": FALLBACK_TEXT_MODEL,
             "temperature": 0,
+            "max_tokens": 2048,
             "messages": _build_text_fallback_messages(),
             "response_format": {
                 "type": "json_schema",
@@ -623,6 +624,7 @@ async def _call_groq(
     payload = {
         "model": GROQ_MODEL,
         "temperature": 0,
+        "max_tokens": 2048,
         "messages": messages,
         "response_format": {
             "type": "json_schema",
@@ -646,6 +648,7 @@ async def _call_groq(
         fallback_payload = {
             "model": FALLBACK_TEXT_MODEL,
             "temperature": 0,
+            "max_tokens": 2048,
             "messages": _build_text_fallback_messages(),
             "response_format": {
                 "type": "json_schema",
