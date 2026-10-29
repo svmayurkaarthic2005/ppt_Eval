@@ -46,7 +46,7 @@ from app.supabase_client import get_service_client
 logger = logging.getLogger("hackeval.rendering")
 
 LIBREOFFICE_TIMEOUT_SECONDS = 60
-RENDER_DPI = 150
+RENDER_DPI = 200
 SOFFICE_ARGV: list[str] = ["soffice"]
 _PPTX_OPEN_ERRORS = (PackageNotFoundError, zipfile.BadZipFile, KeyError, ValueError, OSError)
 
