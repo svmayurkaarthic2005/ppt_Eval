@@ -83,7 +83,10 @@ KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
     ),
     SlideRole.execution: (
         "execution",
-        "implementation",
+        "execution plan",
+        "implementation plan",
+        "next steps",
+        "immediate next steps",
         "go-to-market",
         "gtm",
         "team",
@@ -91,6 +94,8 @@ KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
         "scale-up",
         "field testing",
         "industrial deployment",
+        "prototype plan",
+        "action plan",
     ),
     SlideRole.timeline: (
         "timeline",
@@ -99,15 +104,32 @@ KEYWORDS: dict[SlideRole, tuple[str, ...]] = {
         "schedule",
         "work plan",
         "testing phases",
+        "week 1",
+        "gantt",
+        "four-week",
+        "4-week",
+        "sprint",
+        "phase plan",
     ),
 }
 
 
 def classify_by_keywords(title: str) -> SlideRole | None:
-    """Returns a role only when exactly one role's keywords match the title."""
+    """Returns a role when any keyword matches the title.
+    When multiple roles match, the one with the longest matching keyword wins
+    (more specific keywords should take precedence over short ones like 'team'
+    or 'cost'). Falls back to None only when nothing matches at all, in which
+    case classify_with_llm is used.
+    """
     haystack = title.lower()
-    matches = [role for role, keywords in KEYWORDS.items() if any(kw in haystack for kw in keywords)]
-    return matches[0] if len(matches) == 1 else None
+    best_role: SlideRole | None = None
+    best_len = 0
+    for role, keywords in KEYWORDS.items():
+        for kw in keywords:
+            if kw in haystack and len(kw) > best_len:
+                best_role = role
+                best_len = len(kw)
+    return best_role
 
 
 async def classify_with_llm(title: str, raw_text: str) -> SlideRole:

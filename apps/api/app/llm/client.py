@@ -183,9 +183,13 @@ _VISUAL_EVIDENCE_JSON_SCHEMA = {
 }
 
 # Roles whose slides tend to carry the most load-bearing visual information
-# (diagrams/architecture, cost tables) -- preferred when the deck has more
-# image-bearing slides than the visual-evidence budget allows.
-_VISUAL_PRIORITY_ROLES = {"workflow", "cost"}
+# that a text-only read is least able to substitute for.  Timeline and
+# execution slides are included alongside workflow/architecture and cost
+# because they contain columnar schedules, Gantt-style roadmaps, and phase
+# boxes whose structure is only visible in the rendered image -- missing them
+# caused the model to give 0 for "Timeline Milestones" even when a full
+# Week 1–4 roadmap was present on slide 4.
+_VISUAL_PRIORITY_ROLES = {"workflow", "cost", "execution", "timeline"}
 
 
 def select_informative_slides(
