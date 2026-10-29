@@ -76,60 +76,173 @@ function EvidencePanel({ criterion }: { criterion: CriterionEvidenceView }) {
   if (criterion.evidence_unavailable) {
     // Scored fine; the model just didn't cite a specific slide (common for
     // holistic criteria) -- the rationale above already explains the score.
-    return <p className="mt-3 text-sm italic text-slate-400">No specific slide evidence cited.</p>;
+    return (
+      <p className="mt-3 flex items-center gap-1.5 text-xs italic text-slate-400">
+        <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        No specific slide evidence cited — holistic criterion.
+      </p>
+    );
   }
+
+  const evidenceTypeBadge: Record<string, string> = {
+    visual:   "bg-violet-100 text-violet-800 border-violet-200",
+    text:     "bg-sky-100    text-sky-800    border-sky-200",
+    llm:      "bg-indigo-100 text-indigo-800 border-indigo-200",
+    combined: "bg-teal-100   text-teal-800   border-teal-200",
+  };
   return (
-    <ul className="mt-3 flex flex-col gap-2">
-      {criterion.evidence.map((item, i) => (
-        <li key={i} className="rounded border border-slate-100 bg-slate-50 p-2 text-sm">
-          <p className="text-xs font-medium text-slate-500">
-            Slide {item.slide_number ?? "?"} &middot; {item.evidence_type}
-          </p>
-          <p className="text-slate-700">{item.observation}</p>
-          {item.image_urls.length > 0 && (
-            <a href={item.image_urls[0]} target="_blank" rel="noreferrer">
-              <img
-                src={item.image_urls[0]}
-                alt={`Slide ${item.slide_number}`}
-                className="mt-2 h-20 w-auto rounded border border-slate-200"
-              />
-            </a>
-          )}
-          {item.text_snippet && (
-            <p className="mt-1 text-xs italic text-slate-500">"{item.text_snippet}"</p>
-          )}
-        </li>
-      ))}
-    </ul>
+    <div className="mt-3 space-y-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Evidence cited</p>
+      <ul className="flex flex-col gap-3">
+        {criterion.evidence.map((item, i) => {
+          const typeKey = (item.evidence_type ?? "").toLowerCase();
+          const badgeCls = evidenceTypeBadge[typeKey] ?? "bg-slate-100 text-slate-700 border-slate-200";
+          return (
+            <li key={i} className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
+              {/* Header */}
+              <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-3 py-1.5">
+                <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-black text-white">
+                  Slide {item.slide_number ?? "?"}
+                </span>
+                <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${badgeCls}`}>
+                  {item.evidence_type ?? "evidence"}
+                </span>
+              </div>
+
+              <div className="flex gap-3 p-3">
+                {/* Slide thumbnail — larger, opens full res */}
+                {item.image_urls.length > 0 && (
+                  <a href={item.image_urls[0]} target="_blank" rel="noreferrer"
+                    className="group relative flex-shrink-0">
+                    <img
+                      src={item.image_urls[0]}
+                      alt={`Slide ${item.slide_number}`}
+                      className="h-24 w-auto rounded-lg border border-slate-200 object-cover transition-all duration-200 group-hover:scale-[1.03] group-hover:shadow-md"
+                    />
+                    <span className="absolute inset-0 flex items-end justify-center rounded-lg pb-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <span className="rounded-md bg-white/90 px-1.5 py-0.5 text-[9px] font-bold text-slate-800 shadow">
+                        Full res ↗
+                      </span>
+                    </span>
+                  </a>
+                )}
+
+                {/* Text content */}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <p className="border-l-2 border-indigo-300 pl-2.5 text-xs leading-relaxed text-slate-700">
+                    {item.observation}
+                  </p>
+                  {item.text_snippet && (
+                    <blockquote className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-[11px] italic leading-relaxed text-slate-500">
+                      <span className="mr-0.5 font-serif text-slate-300 text-base leading-none">"</span>
+                      {item.text_snippet}
+                      <span className="ml-0.5 font-serif text-slate-300 text-base leading-none">"</span>
+                    </blockquote>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
 function CriterionRow({ criterion }: { criterion: CriterionEvidenceView }) {
   const [expanded, setExpanded] = useState(false);
-  const oneLineRationale = truncateAtWord(criterion.rationale.split("\n")[0], 140);
+
+  // Split the full rationale into the first sentence (preview) and the rest
+  const fullText = criterion.rationale.trim();
+  const firstSentenceEnd = fullText.search(/(?<=[.!?])\s/);
+  const previewText =
+    firstSentenceEnd > 0 ? fullText.slice(0, firstSentenceEnd + 1) : truncateAtWord(fullText, 150);
+  const hasMore = fullText.length > previewText.length;
+
+  // Score colour
+  const pct = criterion.max_score > 0 ? criterion.llm_score / criterion.max_score : 0;
+  const scoreColor =
+    pct >= 0.8
+      ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+      : pct >= 0.5
+      ? "text-amber-700 bg-amber-50 border-amber-200"
+      : "text-rose-700 bg-rose-50 border-rose-200";
+  const barColor =
+    pct >= 0.8 ? "bg-emerald-500" : pct >= 0.5 ? "bg-amber-400" : "bg-rose-500";
+
+  // Paragraphs for expanded view
+  const paragraphs = fullText.split(/\n+/).filter(Boolean);
 
   return (
-    <div className="border-b border-slate-100 py-2.5 last:border-b-0">
+    <div className="border-b border-slate-100 last:border-b-0">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-start justify-between gap-3 text-left"
+        className="flex w-full items-start justify-between gap-3 py-3 text-left group"
       >
-        <div>
-          <p className="text-sm font-medium text-slate-800">{criterion.criterion_key}</p>
-          <p className="text-sm text-slate-500">{oneLineRationale}</p>
-        </div>
-        <span className="shrink-0 text-sm font-semibold text-slate-700">
-          {Number(criterion.llm_score.toFixed(2))}/{Number(criterion.max_score.toFixed(2))}
-        </span>
-      </button>
-      {expanded && (
-        <>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-            {criterion.rationale}
+        <div className="flex-1 min-w-0">
+          {/* Criterion key as a styled label */}
+          <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">
+            {criterion.criterion_key.replace(/_/g, " ")}
           </p>
+          {/* Preview rationale — first sentence */}
+          <p className={`text-sm leading-relaxed text-slate-600 transition-colors group-hover:text-slate-800 ${expanded ? "hidden" : ""}` }>
+            {previewText}
+            {hasMore && !expanded && (
+              <span className="ml-1 text-indigo-400 font-medium text-xs">more…</span>
+            )}
+          </p>
+        </div>
+
+        {/* Score pill + mini bar */}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <span className={`rounded-lg border px-2.5 py-0.5 text-xs font-black tabular-nums ${scoreColor}`}>
+            {Number(criterion.llm_score.toFixed(1))}/{Number(criterion.max_score.toFixed(1))}
+          </span>
+          <div className="h-1 w-12 rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+              style={{ width: `${Math.min(100, pct * 100)}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Chevron */}
+        <svg
+          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 mt-1 ${
+            expanded ? "rotate-180" : ""
+          }`}
+          viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {expanded && (
+        <div className="pb-4 animate-slide-up">
+          {/* Full rationale — paragraph per block */}
+          <div className="rounded-xl border border-slate-100 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2.5">
+            {paragraphs.map((para, i) => {
+              // First paragraph gets an accent left border
+              const isFirst = i === 0;
+              return (
+                <p
+                  key={i}
+                  className={`text-sm leading-relaxed text-slate-700 ${
+                    isFirst
+                      ? "pl-3 border-l-2 border-indigo-400 font-medium text-slate-800"
+                      : "pl-3 border-l-2 border-transparent"
+                  }`}
+                >
+                  {para}
+                </p>
+              );
+            })}
+          </div>
           <EvidencePanel criterion={criterion} />
-        </>
+        </div>
       )}
     </div>
   );
@@ -224,28 +337,47 @@ function SectionBreakdown({ sectionKey, criteria }: { sectionKey: string; criter
   const maxTotal = criteria.reduce((sum, c) => sum + c.max_score, 0);
   const scorePct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
 
+  const sectionColor =
+    scorePct >= 75
+      ? { bar: "bg-emerald-500", accent: "from-emerald-50", badge: "bg-emerald-100 text-emerald-800 border-emerald-200" }
+      : scorePct >= 50
+      ? { bar: "bg-amber-400",  accent: "from-amber-50",   badge: "bg-amber-100  text-amber-800  border-amber-200"  }
+      : { bar: "bg-rose-500",   accent: "from-rose-50",     badge: "bg-rose-100   text-rose-800   border-rose-200"   };
+
   return (
-    <div className="stitch-card rounded-2xl p-5 shadow-sm">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
-        <div>
-          <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-800">
-            {sectionKey.replace(/_/g, " ")}
-          </h3>
-          <p className="text-xs text-slate-600">{criteria.length} rubric criteria evaluated</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="w-24 h-2 rounded-full bg-slate-100 overflow-hidden hidden sm:block">
-            <div
-              className="h-full rounded-full bg-indigo-600"
-              style={{ width: `${Math.min(100, Math.max(0, scorePct))}%` }}
-            />
+    <div className="stitch-card overflow-hidden rounded-2xl shadow-sm">
+      {/* Gradient accent header */}
+      <div className={`bg-gradient-to-r ${sectionColor.accent} to-white px-5 pt-4 pb-3 border-b border-slate-100`}>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-extrabold uppercase tracking-widest text-slate-500">
+              {sectionKey.replace(/_/g, " ")}
+            </h3>
+            <p className="mt-0.5 text-[11px] text-slate-400">{criteria.length} rubric criteria evaluated</p>
           </div>
-          <span className="rounded-xl bg-slate-100 px-3 py-1 text-xs font-black text-slate-800 border border-slate-200/60 tabular-nums">
-            {Number(total.toFixed(2))} / {Number(maxTotal.toFixed(2))}
-          </span>
+
+          <div className="flex items-center gap-3">
+            {/* Section score progress */}
+            <div className="flex items-center gap-2">
+              <div className="w-28 h-1.5 rounded-full bg-slate-200 overflow-hidden hidden sm:block">
+                <div
+                  className={`h-full rounded-full transition-all duration-700 ${sectionColor.bar}`}
+                  style={{ width: `${Math.min(100, Math.max(0, scorePct))}%` }}
+                />
+              </div>
+              <span className="text-xs text-slate-500 tabular-nums hidden sm:inline">
+                {Math.round(scorePct)}%
+              </span>
+            </div>
+            <span className={`rounded-xl border px-3 py-1 text-xs font-black tabular-nums ${sectionColor.badge}`}>
+              {Number(total.toFixed(2))} / {Number(maxTotal.toFixed(2))}
+            </span>
+          </div>
         </div>
       </div>
-      <div className="mt-3 divide-y divide-slate-100">
+
+      {/* Criteria list */}
+      <div className="px-5 divide-y divide-slate-50">
         {criteria.map((c) => (
           <CriterionRow key={c.criterion_key} criterion={c} />
         ))}
