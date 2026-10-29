@@ -11,7 +11,6 @@ import {
   createProblemStatement,
   deleteProblemStatement,
   deleteSubmission,
-  deleteTeam,
   getDashboard,
   getOverallRanking,
   getRankingByProblemStatement,
@@ -650,21 +649,22 @@ export default function Home() {
 
   async function handleDeleteRow(row: RankingRow) {
     const ok = await confirm(
-      `Delete team "${row.team_name}"?\n\nAll submissions, slides, and evaluation scores for this team will be permanently deleted.`,
+      `Delete this submission by "${row.team_name}"?\n\nOnly this submission (ID: ${String(row.submission_id).slice(0, 8)}…) will be deleted. If it is the team's last submission, the team entry will also be removed.`,
     );
     if (!ok) return;
     try {
-      if (row.team_id) {
-        await deleteTeam(row.team_id);
-      } else {
-        await deleteSubmission(row.submission_id);
-      }
+      // Always delete by submission_id, not team_id.
+      // Deleting by team_id would wipe ALL submissions for teams sharing the
+      // same name (they share a team_id via _get_or_create_team's name-match).
+      // The backend's DELETE /submissions/{id} already auto-removes the team
+      // row when no submissions remain, so this covers both cases safely.
+      await deleteSubmission(row.submission_id);
       loadRankings();
       loadStats();
       loadAdminDashboardStats();
       loadProblemStatementsData();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete team");
+      alert(err instanceof Error ? err.message : "Failed to delete submission");
     }
   }
 
