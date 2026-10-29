@@ -61,18 +61,23 @@ async def test_reevaluate_submission_marks_stale_and_queues_job():
 
     assert res.id == sub_id
     assert res.is_stale is True
-    # Verify update to is_stale=true was executed
-    mock_conn.execute.assert_any_call("update submissions set is_stale = true where id = $1", sub_id)
-    # Verify the job enqueue was attempted -- idempotency against an
-    # already-active job is now a DB-level constraint (ON CONFLICT DO
-    # NOTHING), not an application-level check, so this always fires.
-    enqueue_calls = [
-        c for c in mock_conn.execute.call_args_list if "insert into jobs" in c.args[0]
+
+    all_execute_sqls = [c.args[0] for c in mock_conn.execute.call_args_list]
+
+    # Verify the status-reset update sets is_stale=true (combined with
+    # status/preliminary_score reset so the full pipeline re-runs).
+    stale_calls = [sql for sql in all_execute_sqls if "is_stale = true" in sql]
+    assert len(stale_calls) >= 1, "Expected at least one execute setting is_stale=true"
+
+    # Verify render_slides is re-queued so fresh slide images are fetched
+    # before LLM scoring -- stale/empty image_storage_paths caused all-zero
+    # scores on re-evaluated submissions.
+    render_job_calls = [
+        c for c in mock_conn.execute.call_args_list
+        if "insert into jobs" in c.args[0] and "render_slides" in str(c.args)
     ]
-    assert len(enqueue_calls) == 1
-    assert enqueue_calls[0].args[1] == sub_id
-    assert "on conflict" in enqueue_calls[0].args[0]
-    assert "do nothing" in enqueue_calls[0].args[0]
+    assert len(render_job_calls) == 1, "Expected render_slides job to be enqueued"
+    assert render_job_calls[0].args[1] == sub_id
 
 
 @pytest.mark.asyncio

@@ -446,12 +446,38 @@ async def extract_visual_evidence(
     This replaces the old design where each of the 4 sections independently
     re-sent the same images."""
     image_batch = [(s.slide_number, s.image_bytes) for s in selected_slides if s.image_bytes is not None]
-    if not image_batch or time.time() < _vision_disabled_until:
+
+    vision_disabled = time.time() < _vision_disabled_until
+    if not image_batch:
+        # No images available for this submission at all (text-only deck or
+        # rendering failed) -- this is expected and not a quota issue.
         return VisualEvidence(
             observations="",
             visual_relationships="",
             chart_interpretations="",
-            uncertainties=[],
+            uncertainties=["No slide images available for this submission; judging on text evidence only."],
+            contradiction_candidates=[],
+            slides_covered=[],
+            coverage="none",
+        )
+    if vision_disabled:
+        # Daily vision quota is exhausted -- log clearly so it's obvious in
+        # server logs why every submission in this window scores text-only.
+        remaining = int(_vision_disabled_until - time.time())
+        logger.warning(
+            "submission %s: vision quota disabled for another %ds; "
+            "visual evidence skipped -- scores will be text-only",
+            submission_id,
+            remaining,
+        )
+        return VisualEvidence(
+            observations="",
+            visual_relationships="",
+            chart_interpretations="",
+            uncertainties=[
+                f"Vision quota exhausted; visual evidence unavailable for ~{remaining // 60} more minute(s). "
+                "Re-evaluate this submission once the quota window resets."
+            ],
             contradiction_candidates=[],
             slides_covered=[],
             coverage="none",
@@ -662,14 +688,27 @@ async def _call_groq(
             response = await post_with_backoff(client, payload, pool)
         return response.json()
     except Exception as exc:  # noqa: BLE001
-        if "429" in str(exc) or "rate_limit" in str(exc).lower():
+        exc_text = str(exc)
+        # Only disable vision for daily-quota (TPD/RPD) 429s -- those won't
+        # recover for hours.  Per-minute rate limits (TPM/RPM) recover in
+        # under a minute; the existing backoff-and-retry in post_with_backoff
+        # already handles them correctly, so tripping _vision_disabled_until
+        # for 30 minutes on a transient TPM spike killed vision for every
+        # subsequent submission in that window, producing all-zero scores.
+        if ("429" in exc_text or "rate_limit" in exc_text.lower()) and _is_daily_quota_error(exc_text):
             _vision_disabled_until = time.time() + 1800.0
-        logger.warning(
-            "Primary model %s failed (%s); trying fallback text model %s",
-            GROQ_MODEL,
-            exc,
-            FALLBACK_TEXT_MODEL,
-        )
+            logger.warning(
+                "Daily vision quota (TPD/RPD) exhausted; disabling vision for 30 min. "
+                "Falling back to text-only model %s.",
+                FALLBACK_TEXT_MODEL,
+            )
+        else:
+            logger.warning(
+                "Primary model %s failed (%s); trying fallback text model %s",
+                GROQ_MODEL,
+                exc,
+                FALLBACK_TEXT_MODEL,
+            )
         fallback_payload = {
             "model": FALLBACK_TEXT_MODEL,
             "temperature": 0,

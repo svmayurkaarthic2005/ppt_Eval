@@ -704,8 +704,15 @@ async def reevaluate_submission(
     pool: asyncpg.Pool = Depends(get_db_pool),
     _admin_id: str = Depends(get_current_admin_id),
 ) -> Submission:
-    """Explicitly triggers re-evaluation for a submission, rebuilding derived results,
-    updating stale state, and queuing Stage 2 analysis idempotently."""
+    """Explicitly triggers full re-evaluation for a submission.
+
+    Pipeline: render_slides → build_rubric → stage1_preliminary →
+    stage2_deep_analysis.  Re-rendering ensures fresh slide images are
+    downloaded from storage before the LLM sees them -- skipping this step
+    was the cause of 'vision disabled / no images' zero-scores when a
+    previous submission had tripped the daily quota flag and `image_storage_paths`
+    was stale or empty for the submission being re-evaluated.
+    """
     async with pool.acquire() as conn:
         sub = await conn.fetchrow(
             """
@@ -720,12 +727,34 @@ async def reevaluate_submission(
         if sub is None:
             raise HTTPException(status_code=404, detail="Submission not found")
 
+        # Reset status so the full pipeline runs: rendering → rubric-build →
+        # stage1 → stage2.  Clearing criterion_scores lets stage2 re-score
+        # all criteria fresh instead of resuming from potentially bad old scores.
         await conn.execute(
-            "update submissions set is_stale = true where id = $1",
+            "update submissions set is_stale = true, status = 'rendering', "
+            "preliminary_score = null, preliminary_flagged = false where id = $1",
+            submission_id,
+        )
+        await conn.execute(
+            "delete from criterion_scores where submission_id = $1", submission_id
+        )
+        await conn.execute(
+            "delete from final_scores where submission_id = $1", submission_id
+        )
+        # Cancel any pending/running jobs for this submission so we don't
+        # race the new pipeline jobs against old ones.
+        await conn.execute(
+            "update jobs set status = 'failed', last_error = 'superseded by re-evaluate' "
+            "where submission_id = $1 and status in ('queued', 'running')",
+            submission_id,
+        )
+        # Re-queue from the top of the pipeline so rendering re-downloads
+        # images -- this is the fix for stale/empty image_storage_paths.
+        await conn.execute(
+            "insert into jobs (submission_id, job_type) values ($1, 'render_slides')",
             submission_id,
         )
         invalidate_for_submission(submission_id)
-        await enqueue_stage2_deep_analysis(conn, submission_id)
 
         row = await conn.fetchrow(
             """
