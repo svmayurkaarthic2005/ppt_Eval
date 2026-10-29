@@ -475,8 +475,8 @@ async def extract_visual_evidence(
             visual_relationships="",
             chart_interpretations="",
             uncertainties=[
-                f"Vision quota exhausted; visual evidence unavailable for ~{remaining // 60} more minute(s). "
-                "Re-evaluate this submission once the quota window resets."
+                (f"Vision quota exhausted; visual evidence unavailable for ~{remaining // 60} more minute(s). "
+                 "Re-evaluate this submission once the quota window resets."),
             ],
             contradiction_candidates=[],
             slides_covered=[],
