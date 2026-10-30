@@ -169,3 +169,58 @@ async def get_ranking_by_problem_statement(
         group.submission_count += 1
 
     return list(groups.values())
+
+
+async def ensure_app_settings_table(conn: asyncpg.Connection) -> None:
+    """Auto-provisions the app_settings table if it doesn't already exist."""
+    await conn.execute(
+        """
+        create table if not exists app_settings (
+            key text primary key,
+            value jsonb not null,
+            updated_at timestamptz not null default now()
+        );
+        """
+    )
+
+
+async def get_leaderboard_publish_status(conn: asyncpg.Connection) -> dict:
+    """Returns whether the leaderboard is published for general viewers."""
+    await ensure_app_settings_table(conn)
+    row = await conn.fetchrow(
+        "select value, updated_at from app_settings where key = 'leaderboard_published'"
+    )
+    if not row:
+        return {"is_published": False, "published_at": None}
+    val = row["value"]
+    if isinstance(val, bool):
+        is_pub = val
+    elif isinstance(val, dict):
+        is_pub = bool(val.get("published", False))
+    elif isinstance(val, str):
+        is_pub = val.lower() == "true"
+    else:
+        is_pub = False
+    return {
+        "is_published": is_pub,
+        "published_at": row["updated_at"].isoformat() if is_pub and row["updated_at"] else None,
+    }
+
+
+async def set_leaderboard_publish_status(conn: asyncpg.Connection, published: bool) -> dict:
+    """Sets whether the leaderboard is published for general viewers."""
+    import json
+    await ensure_app_settings_table(conn)
+    payload = json.dumps({"published": published})
+    await conn.execute(
+        """
+        insert into app_settings (key, value, updated_at)
+        values ('leaderboard_published', $1::jsonb, now())
+        on conflict (key) do update set value = excluded.value, updated_at = now()
+        """,
+        payload,
+    )
+    return {
+        "is_published": published,
+        "published_at": "now" if published else None,
+    }

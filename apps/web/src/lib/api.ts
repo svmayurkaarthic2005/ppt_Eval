@@ -195,13 +195,48 @@ export async function getSubmissionStats(): Promise<{
   return parseOrThrow(response);
 }
 
+export interface LeaderboardPublishStatus {
+  is_published: boolean;
+  published_at: string | null;
+}
+
+export async function getLeaderboardPublishStatus(): Promise<LeaderboardPublishStatus> {
+  const response = await fetch(`${API_URL}/rankings/status`);
+  return parseOrThrow(response);
+}
+
+export async function setLeaderboardPublishStatus(
+  published: boolean,
+): Promise<LeaderboardPublishStatus> {
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/rankings/publish`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ published }),
+  });
+  return parseOrThrow(response);
+}
+
 export async function getOverallRanking(): Promise<RankingRow[]> {
-  const response = await fetch(`${API_URL}/rankings/overall`);
+  const headers: Record<string, string> = {};
+  const token = await getAccessToken().catch(() => null);
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const response = await fetch(`${API_URL}/rankings/overall`, { headers });
   return parseOrThrow(response);
 }
 
 export async function getRankingByProblemStatement(): Promise<ProblemStatementGroup[]> {
-  const response = await fetch(`${API_URL}/rankings/by-problem-statement`);
+  const headers: Record<string, string> = {};
+  const token = await getAccessToken().catch(() => null);
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const response = await fetch(`${API_URL}/rankings/by-problem-statement`, { headers });
   return parseOrThrow(response);
 }
 

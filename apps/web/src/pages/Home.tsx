@@ -12,13 +12,16 @@ import {
   deleteProblemStatement,
   deleteSubmission,
   getDashboard,
+  getLeaderboardPublishStatus,
   getOverallRanking,
   getRankingByProblemStatement,
   getSubmissionStats,
   listProblemStatements,
   reEvaluateSubmission,
+  setLeaderboardPublishStatus,
   setManualRank,
   triggerStage2Selection,
+  type LeaderboardPublishStatus,
 } from "../lib/api";
 import type { ProblemStatement, ProblemStatementGroup, RankingRow } from "@hackeval/types";
 
@@ -557,7 +560,32 @@ export default function Home() {
   const [bulkReEvaluating, setBulkReEvaluating] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<LeaderboardPublishStatus>({
+    is_published: false,
+    published_at: null,
+  });
+  const [togglingPublish, setTogglingPublish] = useState(false);
   const navigate = useNavigate();
+
+  function loadPublishStatus(): void {
+    getLeaderboardPublishStatus()
+      .then(setPublishStatus)
+      .catch(() => {});
+  }
+
+  async function handleTogglePublish(): Promise<void> {
+    const nextState = !publishStatus.is_published;
+    setTogglingPublish(true);
+    try {
+      const updated = await setLeaderboardPublishStatus(nextState);
+      setPublishStatus(updated);
+      loadRankings();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update publication status.");
+    } finally {
+      setTogglingPublish(false);
+    }
+  }
 
   /** Public aggregate counts -- works for every viewer, admin or not. */
   function loadStats(): Promise<boolean> {
@@ -603,12 +631,14 @@ export default function Home() {
   }
 
   useEffect(() => {
+    loadPublishStatus();
     loadRankings();
     loadStats();
     loadAdminDashboardStats();
     loadProblemStatementsData();
 
     const interval = setInterval(() => {
+      loadPublishStatus();
       loadAdminDashboardStats();
       loadStats().then((inProgress) => {
         if (inProgress) {
@@ -931,52 +961,167 @@ export default function Home() {
         />
       </div>
 
-      {/* Clean View Segmented Switcher (No duplicate buttons) */}
-      <div className="flex items-center justify-between">
-        <div className="inline-flex rounded-xl bg-slate-200/70 p-1 border border-slate-300/40">
-          {(
-            [
-              { key: "overall" as const, label: "Overall Standings" },
-              { key: "by-problem-statement" as const, label: "Grouped By Problem Statement" },
-            ]
-          ).map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setView(tab.key)}
-              className={`rounded-lg px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-150 ${
-                view === tab.key
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+      {/* Admin Leaderboard Publication Bar */}
+      {isAdmin && (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                publishStatus.is_published
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-amber-50 text-amber-600"
               }`}
             >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {!loading && (
+              {publishStatus.is_published ? (
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              )}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-slate-900">Leaderboard Visibility:</span>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                    publishStatus.is_published
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-amber-50 text-amber-700 border border-amber-200"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      publishStatus.is_published ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                    }`}
+                  />
+                  {publishStatus.is_published ? "Published (Live for Everyone)" : "Draft (Hidden from Public Viewers)"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {publishStatus.is_published
+                  ? "Participants and public viewers can currently see all rankings and scores."
+                  : "Only logged-in admins can see these scores right now. Public viewers see an 'Under Evaluation' holding screen."}
+              </p>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={handleDownloadCsv}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
+            disabled={togglingPublish}
+            onClick={handleTogglePublish}
+            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition shadow-sm ${
+              publishStatus.is_published
+                ? "bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200"
+                : "bg-emerald-600 text-white hover:bg-emerald-700"
+            } disabled:opacity-50`}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />
-            </svg>
-            Download CSV
+            {togglingPublish ? (
+              <>
+                <svg className="h-4 w-4 animate-spin text-current" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Updating...
+              </>
+            ) : publishStatus.is_published ? (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                </svg>
+                Unpublish Leaderboard
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                Publish Leaderboard
+              </>
+            )}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {loading && <TableSkeleton />}
 
+      {!loading && !isAdmin && !publishStatus.is_published && (
+        <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/30 py-20 px-6 text-center shadow-sm">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-8 w-8">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <div className="max-w-md">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200/80 px-3 py-1 text-xs font-bold text-amber-800 mb-3">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Evaluation In Progress
+            </span>
+            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
+              Leaderboard Under Jury Evaluation
+            </h2>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              Submissions are currently being evaluated and verified. The official hackathon rankings and scores will be published here once the jury finalizes the results.
+            </p>
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-500">
+            <svg className="h-4 w-4 text-indigo-500 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            Auto-refreshing status periodically
+          </div>
+        </div>
+      )}
+
+      {/* Clean View Segmented Switcher (No duplicate buttons) */}
+      {(isAdmin || publishStatus.is_published) && (
+        <div className="flex items-center justify-between">
+          <div className="inline-flex rounded-xl bg-slate-200/70 p-1 border border-slate-300/40">
+            {(
+              [
+                { key: "overall" as const, label: "Overall Standings" },
+                { key: "by-problem-statement" as const, label: "Grouped By Problem Statement" },
+              ]
+            ).map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setView(tab.key)}
+                className={`rounded-lg px-4 py-2 text-xs sm:text-sm font-bold transition-all duration-150 ${
+                  view === tab.key
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {!loading && (
+            <button
+              type="button"
+              onClick={handleDownloadCsv}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" />
+              </svg>
+              Download CSV
+            </button>
+          )}
+        </div>
+      )}
+
       {/* View 1: Overall Standings */}
-      {!loading && view === "overall" && overall!.length === 0 && (
+      {!loading && (isAdmin || publishStatus.is_published) && view === "overall" && overall!.length === 0 && (
         <EmptyState message="No submissions have completed scoring yet." showAction={isAdmin} />
       )}
 
-      {!loading && view === "overall" && overall!.length > 0 && (
+      {!loading && (isAdmin || publishStatus.is_published) && view === "overall" && overall!.length > 0 && (
         <RankingTable
           rows={overall!}
           sectionKeys={overallSectionKeys}
@@ -990,7 +1135,7 @@ export default function Home() {
       )}
 
       {/* View 2: Grouped by Problem Statement */}
-      {!loading && view === "by-problem-statement" && groups!.length === 0 && emptyProblemStatements.length === 0 && (
+      {!loading && (isAdmin || publishStatus.is_published) && view === "by-problem-statement" && groups!.length === 0 && emptyProblemStatements.length === 0 && (
         <EmptyState
           title="No Problem Statements or Submissions"
           message="Create a problem statement or upload a presentation to generate domain rankings."
@@ -1000,7 +1145,7 @@ export default function Home() {
         />
       )}
 
-      {!loading && view === "by-problem-statement" && (groups!.length > 0 || emptyProblemStatements.length > 0) && (
+      {!loading && (isAdmin || publishStatus.is_published) && view === "by-problem-statement" && (groups!.length > 0 || emptyProblemStatements.length > 0) && (
         <div className="flex flex-col gap-4">
           {groups!.map((group) => (
             <ProblemStatementGroupCard
