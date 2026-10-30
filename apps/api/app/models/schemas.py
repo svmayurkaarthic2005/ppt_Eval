@@ -69,6 +69,16 @@ class SubmissionContext(BaseModel):
     track_constraints: list[str]
     is_generic: bool
     generic_reason: str | None = None
+    solution_type: str = "unknown"
+    """Broad implementation category extracted from the problem statement:
+    "hardware" (physical device/prototype/circuit/sensor/mechanical system),
+    "software" (app/AI/ML/algorithm/dashboard with no physical build),
+    "hybrid" (both hardware and software components), or
+    "unknown" (cannot be determined from the problem statement alone).
+    Used by render_evaluation_context to apply the right technical-rigor
+    framing so a pure hardware project is never penalised for lacking code
+    or APIs, and a pure software project is never penalised for lacking
+    physical apparatus or a bill of materials."""
 
 
 class ReliabilityLabel(str, Enum):

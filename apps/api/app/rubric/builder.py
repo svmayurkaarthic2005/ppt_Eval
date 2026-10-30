@@ -40,6 +40,16 @@ SUBMISSION_CONTEXT_JSON_SCHEMA = {
             ),
         },
         "generic_reason": {"type": ["string", "null"]},
+        "solution_type": {
+            "type": "string",
+            "enum": ["hardware", "software", "hybrid", "unknown"],
+            "description": (
+                "hardware = physical device/prototype/circuit/sensor/mechanical system; "
+                "software = app/AI/ML/algorithm/dashboard with no physical build; "
+                "hybrid = both hardware and software components; "
+                "unknown = cannot be determined from the problem statement alone."
+            ),
+        },
     },
     "required": [
         "problem_domain",
@@ -48,6 +58,7 @@ SUBMISSION_CONTEXT_JSON_SCHEMA = {
         "track_constraints",
         "is_generic",
         "generic_reason",
+        "solution_type",
     ],
     "additionalProperties": False,
 }
@@ -78,6 +89,10 @@ monitoring for a chemical process") -- not their implementation technology (e.g.
 - is_generic: true only if this text just repeats generic hackathon instructions/prompts \
 with no team- or domain-specific content of its own.
 - generic_reason: a one-sentence reason if is_generic is true, else null.
+- solution_type: classify the implementation as one of: "hardware" (physical device/prototype/\
+circuit/sensor/mechanical/chemical system), "software" (app/AI/ML/algorithm/dashboard with no \
+physical build), "hybrid" (both hardware and software components), or "unknown" (cannot be \
+determined). Base this only on the problem statement text.
 
 Problem statement:
 {wrapped_text}
@@ -122,6 +137,7 @@ def _parse_submission_context(raw: dict) -> SubmissionContext:
         track_constraints=raw.get("track_constraints") or [],
         is_generic=bool(raw.get("is_generic", False)),
         generic_reason=raw.get("generic_reason"),
+        solution_type=raw.get("solution_type") or "unknown",
     )
 
 
@@ -180,27 +196,78 @@ async def extract_submission_context(problem_statement_text: str) -> SubmissionC
 _THEME_GROUNDING = (
     "This is an Environmental and Chemical Engineering-themed hackathon: every submission must be "
     "assessed for its relevance, contribution, technical validity, and feasibility in that context. "
-    "Implementation technology varies -- a physical process (reactions, separation, treatment, "
-    "material formulation, scale-up), a software/AI system (predictive models, computer vision, "
+    "Implementation technology varies -- a physical process / hardware prototype (sensors, circuits, "
+    "mechanical or chemical apparatus), a software/AI system (predictive models, computer vision, "
     "optimization, decision-support), or a hybrid of both are all valid ways to address an "
     "environmental or chemical engineering problem, and none of them should be rewarded or "
-    "penalized merely for being that type. For a software/AI submission specifically, judge "
-    "whether it demonstrably addresses a real environmental/chemical engineering problem, whether "
-    "its data/assumptions/methods support its claimed outcome, and whether the claimed benefit "
-    "(e.g. treatment efficiency, material recovery, emission/energy reduction, process safety) is "
-    "evidenced rather than assumed -- not merely how sophisticated the technology is. Do not "
-    "penalize a software-only solution for lacking chemicals, reactors, or physical machinery."
+    "penalized merely for being that type."
+)
+
+_HARDWARE_FRAMING = (
+    "This is a HARDWARE / PHYSICAL-PROTOTYPE submission. Judge technical rigor by hardware-relevant "
+    "standards: component selection and justification, circuit/mechanical/chemical design validity, "
+    "sensor calibration, power budget, materials compatibility, safety, manufacturing feasibility, "
+    "and prototype testing plan. Do NOT penalise this submission for lacking software architecture, "
+    "APIs, datasets, or ML models -- those are irrelevant to a hardware project. A physical BOM "
+    "(bill of materials) with realistic cost estimates IS expected and should be evaluated."
+)
+
+_SOFTWARE_FRAMING = (
+    "This is a SOFTWARE / AI / DIGITAL submission. Judge technical rigor by software-relevant "
+    "standards: data quality, model/algorithm validity, system architecture, scalability, and "
+    "whether the claimed environmental/chemical benefit is evidenced, not assumed. Do NOT penalise "
+    "this submission for lacking physical hardware, chemical reactors, lab apparatus, or a "
+    "physical BOM -- those are irrelevant to a purely digital project."
+)
+
+_HYBRID_FRAMING = (
+    "This submission has BOTH a hardware/physical component AND a software/digital component. "
+    "Judge each part by the standards appropriate to it: hardware by component selection, design "
+    "validity, and prototyping feasibility; software by data quality, algorithm/architecture "
+    "validity, and evidenced environmental benefit. A partial BOM covering the physical components "
+    "is expected; the absence of software architecture detail is only a gap if the software "
+    "component is central to the claimed outcome."
 )
 
 
+def _solution_type_framing(solution_type: str) -> str:
+    """Returns the appropriate technical-rigor framing paragraph for the
+    submission's implementation type so the LLM applies hardware standards
+    to hardware projects and software standards to software projects.
+    Defaults to the hybrid framing when the type cannot be determined.
+    """
+    if solution_type == "hardware":
+        return _HARDWARE_FRAMING
+    if solution_type == "software":
+        return _SOFTWARE_FRAMING
+    if solution_type == "hybrid":
+        return _HYBRID_FRAMING
+    # unknown: give balanced guidance that doesn't assume either type
+    return (
+        "The solution type (hardware / software / hybrid) could not be determined from the "
+        "problem statement. Judge technical rigor using whichever standards are most relevant "
+        "to what the submission actually proposes: hardware standards (component selection, "
+        "design validity, BOM, safety) for physical prototypes; software standards (data, "
+        "model validity, architecture, evidenced benefit) for digital tools. Do not penalise "
+        "a hardware project for lacking software artefacts, or a software project for lacking "
+        "physical apparatus."
+    )
+
+
 def render_evaluation_context(context: SubmissionContext) -> str:
+    solution_framing = _solution_type_framing(getattr(context, "solution_type", "unknown"))
     if not context.problem_domain and not context.target_beneficiary:
         return (
-            _THEME_GROUNDING + " No further team-specific grounding is available for this "
+            _THEME_GROUNDING + " " + solution_framing
+            + " No further team-specific grounding is available for this "
             "submission; evaluate against the rubric's general criteria within that theme."
         )
 
-    parts = [_THEME_GROUNDING, f"This team's stated problem domain is: {context.problem_domain}."]
+    parts = [
+        _THEME_GROUNDING,
+        solution_framing,
+        f"This team's stated problem domain is: {context.problem_domain}.",
+    ]
     if context.target_beneficiary:
         parts.append(f"Their stated target beneficiary is: {context.target_beneficiary}.")
     if context.required_deliverables:
