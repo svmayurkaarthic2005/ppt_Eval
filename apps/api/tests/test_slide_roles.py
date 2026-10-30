@@ -22,6 +22,10 @@ async def test_classify_with_llm_requests_enough_tokens_for_reasoning_models(mon
     captured: dict[str, object] = {}
 
     class FakeResponse:
+        status_code = 200
+        text = ""
+        request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+
         def raise_for_status(self) -> None:
             return None
 

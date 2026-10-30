@@ -591,11 +591,14 @@ async def post_with_backoff(
         else:
             status_code = getattr(response, "status_code", 200)
             resp_text = getattr(response, "text", "")
+            req = getattr(response, "request", None)
+            request_obj: httpx.Request = (
+                req if isinstance(req, httpx.Request) else httpx.Request("POST", GROQ_CHAT_URL)
+            )
             if status_code in (401, 403):
-                req = getattr(response, "request", None)
                 last_exc = httpx.HTTPStatusError(
                     f"Groq returned {status_code}: {resp_text}",
-                    request=req,
+                    request=request_obj,
                     response=response,
                 )
                 logger.warning(
@@ -608,17 +611,15 @@ async def post_with_backoff(
 
             if status_code not in (429, 500, 502, 503, 504):
                 if status_code >= 400:
-                    req = getattr(response, "request", None)
                     raise httpx.HTTPStatusError(
                         f"Groq returned {status_code}: {resp_text}",
-                        request=req,
+                        request=request_obj,
                         response=response,
                     )
                 return response
-            req = getattr(response, "request", None)
             last_exc = httpx.HTTPStatusError(
                 f"Groq returned {status_code}: {resp_text}",
-                request=req,
+                request=request_obj,
                 response=response,
             )
             if (
