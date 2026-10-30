@@ -556,16 +556,25 @@ def _is_daily_quota_error(error_text: str) -> bool:
     minute, where the existing backoff-and-retry-the-same-key behavior is
     already correct and rotating keys would just shift load for no reason)."""
     lowered = error_text.lower()
-    return "(tpd)" in lowered or "(rpd)" in lowered or "per day" in lowered
+    return (
+        "(tpd)" in lowered
+        or "(rpd)" in lowered
+        or "per day" in lowered
+        or "tokens per day" in lowered
+        or "requests per day" in lowered
+        or "daily limit" in lowered
+        or "insufficient_quota" in lowered
+        or "exceeded your current quota" in lowered
+    )
 
 
 async def post_with_backoff(
     client: httpx.AsyncClient, payload: dict, api_key_pool: GroqKeyPool | str
 ) -> httpx.Response:
     """Accepts either a GroqKeyPool (the normal case -- lets a daily-quota
-    429 rotate to the next key and retry immediately) or a plain string for
-    callers that don't need rotation (e.g. a one-off call with an explicit
-    key)."""
+    429 or auth failure rotate to the next key and retry immediately) or a
+    plain string for callers that don't need rotation (e.g. a one-off call
+    with an explicit key)."""
     pool = api_key_pool if isinstance(api_key_pool, GroqKeyPool) else GroqKeyPool([api_key_pool])
 
     last_exc: Exception | None = None
@@ -580,23 +589,42 @@ async def post_with_backoff(
         except httpx.HTTPError as exc:
             last_exc = exc
         else:
-            if response.status_code not in (429, 500, 502, 503, 504):
-                if response.status_code >= 400:
+            status_code = getattr(response, "status_code", 200)
+            resp_text = getattr(response, "text", "")
+            if status_code in (401, 403):
+                req = getattr(response, "request", None)
+                last_exc = httpx.HTTPStatusError(
+                    f"Groq returned {status_code}: {resp_text}",
+                    request=req,
+                    response=response,
+                )
+                logger.warning(
+                    "Groq auth error (status %d) on key ...%s; rotating to next key in pool",
+                    status_code,
+                    current_key[-4:] if len(current_key) >= 4 else "...",
+                )
+                if pool.current != current_key or pool.mark_exhausted(current_key):
+                    continue  # Next key available -- retry immediately
+
+            if status_code not in (429, 500, 502, 503, 504):
+                if status_code >= 400:
+                    req = getattr(response, "request", None)
                     raise httpx.HTTPStatusError(
-                        f"Groq returned {response.status_code}: {response.text}",
-                        request=response.request,
+                        f"Groq returned {status_code}: {resp_text}",
+                        request=req,
                         response=response,
                     )
                 return response
+            req = getattr(response, "request", None)
             last_exc = httpx.HTTPStatusError(
-                f"Groq returned {response.status_code}: {response.text}",
-                request=response.request,
+                f"Groq returned {status_code}: {resp_text}",
+                request=req,
                 response=response,
             )
             if (
-                response.status_code == 429
-                and _is_daily_quota_error(response.text)
-                and pool.mark_exhausted(current_key)
+                status_code == 429
+                and _is_daily_quota_error(resp_text)
+                and (pool.current != current_key or pool.mark_exhausted(current_key))
             ):
                 continue  # fresh key, fresh quota -- retry now, no backoff wait
 
@@ -615,6 +643,12 @@ async def post_with_backoff(
                     retry_after = float(match.group(1)) + 0.5
         backoff = max(retry_after, NETWORK_BACKOFF_BASE_SECONDS * (2**attempt))
         if backoff > 60.0:
+            if pool.current != current_key or pool.mark_exhausted(current_key):
+                logger.warning(
+                    "Groq backoff %.1fs on key exceeds 60s limit; rotating to next key in pool",
+                    backoff,
+                )
+                continue
             logger.warning("Groq backoff %.1fs exceeds 60s limit (rate limit/quota reached); aborting attempts: %s", backoff, last_exc)
             raise last_exc
         logger.warning("Groq call failed (attempt %d/%d, backoff %.1fs): %s", attempt + 1, MAX_NETWORK_RETRIES, backoff, last_exc)
@@ -634,11 +668,11 @@ async def _call_groq(
     if not len(pool):
         raise RuntimeError("GROQ_API_KEY is not configured")
 
-    # The caller-supplied limiter throttles overall call volume (its
-    # existing purpose); the per-key limiter additionally tracks each key's
-    # own budget separately, so a key GroqKeyPool just rotated to isn't
-    # throttled based on the exhausted key's usage.
-    await rate_limiter.acquire(estimated_tokens)
+    # The caller-supplied limiter throttles overall call volume if custom;
+    # the per-key limiter tracks each key's own budget separately, so a key
+    # GroqKeyPool rotated to isn't throttled based on the exhausted key's usage.
+    if rate_limiter is not default_rate_limiter:
+        await rate_limiter.acquire(estimated_tokens)
     await get_rate_limiter_for_key(pool.current).acquire(estimated_tokens)
 
     global _vision_disabled_until

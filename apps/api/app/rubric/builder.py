@@ -146,35 +146,33 @@ async def _call_groq_for_context(problem_statement_text: str) -> dict:
         raise SubmissionContextUnavailableError("GROQ_API_KEY is not configured")
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {pool.current}"},
-                json={
-                    "model": GROQ_CONTEXT_MODEL,
-                    "temperature": 0,
-                    "messages": [
-                        {"role": "system", "content": _SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": _CONTEXT_PROMPT.format(
-                                wrapped_text=wrap_untrusted(problem_statement_text)
-                            ),
-                        },
-                    ],
-                    "response_format": {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "submission_context",
-                            "schema": SUBMISSION_CONTEXT_JSON_SCHEMA,
-                            "strict": True,
-                        },
-                    },
+        from app.llm.client import post_with_backoff
+
+        payload = {
+            "model": GROQ_CONTEXT_MODEL,
+            "temperature": 0,
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": _CONTEXT_PROMPT.format(
+                        wrapped_text=wrap_untrusted(problem_statement_text)
+                    ),
                 },
-            )
-            response.raise_for_status()
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "submission_context",
+                    "schema": SUBMISSION_CONTEXT_JSON_SCHEMA,
+                    "strict": True,
+                },
+            },
+        }
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            response = await post_with_backoff(client, payload, pool)
             content = response.json()["choices"][0]["message"]["content"]
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, RuntimeError) as exc:
         # Network failure, timeout, or a non-2xx response (bad model name,
         # rate limit, Groq outage, ...) -- the caller degrades gracefully
         # on this exact exception type, so it must never escape as the raw

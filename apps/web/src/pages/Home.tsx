@@ -16,6 +16,7 @@ import {
   getRankingByProblemStatement,
   getSubmissionStats,
   listProblemStatements,
+  reEvaluateSubmission,
   setManualRank,
   triggerStage2Selection,
 } from "../lib/api";
@@ -447,6 +448,7 @@ function ProblemStatementGroupCard({
   onToggleSelected,
   onSetManualRank,
   onDeleteRow,
+  onReEvaluateRow,
   onDeleteGroup,
   isAdmin,
 }: {
@@ -455,6 +457,7 @@ function ProblemStatementGroupCard({
   onToggleSelected: (submissionId: string) => void;
   onSetManualRank: (submissionId: string, manualRank: number | null) => void;
   onDeleteRow: (row: RankingRow) => void;
+  onReEvaluateRow?: (row: RankingRow) => Promise<void> | void;
   onDeleteGroup: (group: ProblemStatementGroup) => void;
   isAdmin: boolean;
 }) {
@@ -526,6 +529,7 @@ function ProblemStatementGroupCard({
             onToggleSelected={onToggleSelected}
             onSetManualRank={isAdmin ? onSetManualRank : undefined}
             onDeleteRow={isAdmin ? onDeleteRow : undefined}
+            onReEvaluateRow={isAdmin ? onReEvaluateRow : undefined}
             linkToTeam={isAdmin}
           />
         </div>
@@ -550,6 +554,7 @@ export default function Home() {
   const [stage2Message, setStage2Message] = useState<string | null>(null);
   const [triggeringStage2, setTriggeringStage2] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkReEvaluating, setBulkReEvaluating] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
   const navigate = useNavigate();
@@ -686,6 +691,44 @@ export default function Home() {
 
   async function handleDeleteGroup(group: ProblemStatementGroup) {
     await handleDeleteProblemStatementById(group.problem_statement_id, group.title);
+  }
+
+  async function handleReEvaluateRow(row: RankingRow) {
+    try {
+      await reEvaluateSubmission(row.submission_id);
+      alert(`Re-evaluation queued for "${row.team_name}". Full scoring pipeline has restarted.`);
+      loadRankings();
+      loadStats();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to re-evaluate submission");
+    }
+  }
+
+  async function handleBulkReEvaluate() {
+    if (selected.size === 0) return;
+    const ok = await confirm(
+      `Re-evaluate all ${selected.size} selected submissions? This will re-queue full scoring from slide rendering through to deep analysis for each.`,
+    );
+    if (!ok) return;
+    setBulkReEvaluating(true);
+    try {
+      const ids = Array.from(selected);
+      let successCount = 0;
+      for (const id of ids) {
+        try {
+          await reEvaluateSubmission(id);
+          successCount++;
+        } catch (e) {
+          console.error(`Failed to re-evaluate ${id}:`, e);
+        }
+      }
+      alert(`Re-evaluation successfully queued for ${successCount} of ${ids.length} submissions.`);
+      setSelected(new Set());
+      loadRankings();
+      loadStats();
+    } finally {
+      setBulkReEvaluating(false);
+    }
   }
 
   function toggleSelected(submissionId: string) {
@@ -941,6 +984,7 @@ export default function Home() {
           onToggleSelected={toggleSelected}
           onSetManualRank={isAdmin ? handleSetManualRank : undefined}
           onDeleteRow={isAdmin ? handleDeleteRow : undefined}
+          onReEvaluateRow={isAdmin ? handleReEvaluateRow : undefined}
           linkToTeam={isAdmin}
         />
       )}
@@ -966,6 +1010,7 @@ export default function Home() {
               onToggleSelected={toggleSelected}
               onSetManualRank={handleSetManualRank}
               onDeleteRow={handleDeleteRow}
+              onReEvaluateRow={handleReEvaluateRow}
               onDeleteGroup={handleDeleteGroup}
               isAdmin={isAdmin}
             />
@@ -1024,18 +1069,43 @@ export default function Home() {
         </div>
       )}
 
-      {selected.size >= MIN_COMPARE && (
-        <div className="fixed bottom-6 inset-x-0 flex justify-center z-40 pointer-events-none">
-          <button
-            type="button"
-            onClick={handleCompare}
-            className="pointer-events-auto rounded-full bg-indigo-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg transition-colors hover:bg-indigo-700 flex items-center gap-2"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            Compare {selected.size} Selected Teams
-          </button>
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 inset-x-0 flex justify-center z-40 pointer-events-none gap-3">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleBulkReEvaluate}
+              disabled={bulkReEvaluating}
+              className="pointer-events-auto rounded-full bg-amber-600 px-5 py-3.5 text-sm font-bold text-white shadow-lg transition-colors hover:bg-amber-700 flex items-center gap-2 disabled:opacity-50"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                className={`h-4 w-4 ${bulkReEvaluating ? "animate-spin" : ""}`}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              {bulkReEvaluating ? "Queuing..." : `Re-evaluate ${selected.size} Selected`}
+            </button>
+          )}
+          {selected.size >= MIN_COMPARE && (
+            <button
+              type="button"
+              onClick={handleCompare}
+              className="pointer-events-auto rounded-full bg-indigo-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg transition-colors hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Compare {selected.size} Selected Teams
+            </button>
+          )}
         </div>
       )}
 

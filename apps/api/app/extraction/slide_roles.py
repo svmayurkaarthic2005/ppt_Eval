@@ -166,21 +166,19 @@ async def classify_with_llm(title: str, raw_text: str) -> SlideRole:
     )
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {pool.current}"},
-                json={
-                    "model": GROQ_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0,
-                    "max_tokens": 50,
-                    "reasoning_effort": "low",
-                },
-            )
-            response.raise_for_status()
+        from app.llm.client import post_with_backoff
+
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "max_tokens": 50,
+            "reasoning_effort": "low",
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await post_with_backoff(client, payload, pool)
             content = response.json()["choices"][0]["message"]["content"].strip().lower()
-    except (httpx.HTTPError, KeyError, IndexError) as exc:
+    except (httpx.HTTPError, RuntimeError, KeyError, IndexError) as exc:
         logger.warning("slide role LLM classification failed: %s", exc)
         return SlideRole.other
 

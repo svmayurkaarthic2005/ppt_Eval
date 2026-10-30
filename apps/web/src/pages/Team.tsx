@@ -1437,6 +1437,31 @@ export default function Team() {
           {isAdmin && (
           <button
             type="button"
+            onClick={handleReEvaluate}
+            disabled={reEvaluating}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200/80 bg-indigo-50/70 px-3.5 py-2 text-xs font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-600 hover:text-white hover:border-indigo-600 disabled:opacity-50"
+            title="Re-run scoring pipeline on this submission"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              className={`h-4 w-4 ${reEvaluating ? "animate-spin" : ""}`}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            {reEvaluating ? "Queuing..." : "Re-Evaluate"}
+          </button>
+          )}
+
+          {isAdmin && (
+          <button
+            type="button"
             onClick={() => setConfirmDelete(true)}
             className="inline-flex items-center gap-1.5 rounded-xl border border-red-200/80 bg-red-50/70 px-3.5 py-2 text-xs font-bold text-red-700 shadow-sm transition hover:bg-red-600 hover:text-white hover:border-red-600"
             title="Remove this team entirely"
