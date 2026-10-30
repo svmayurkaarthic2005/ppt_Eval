@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 
@@ -56,13 +57,17 @@ async def test_overall_ranking_returns_empty_for_viewer_when_unpublished(monkeyp
 async def test_overall_ranking_returns_data_for_admin_when_unpublished(monkeypatch):
     conn = AsyncMock()
     sample_row = RankingRow(
-        submission_id="sub-1",
+        rank=1,
+        submission_id=uuid4(),
+        team_id=uuid4(),
         team_name="Alpha",
-        total_score=35.0,
-        max_total_score=40.0,
+        total=35.0,
+        max_total=40.0,
         section_totals={},
-        reliability="HIGH",
-        slide_count=12,
+        reliability_label="HIGH",
+        flag_count=0,
+        flag_types=[],
+        manual_rank=None,
     )
     monkeypatch.setattr(
         "app.routers.rankings.get_overall_ranking",
