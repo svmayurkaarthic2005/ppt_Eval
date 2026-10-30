@@ -109,3 +109,12 @@ def test_parse_submission_context_flags_generic():
     )
     assert context.is_generic is True
     assert context.generic_reason == "Copied verbatim from the hackathon brief."
+
+def test_submission_context_json_schema_satisfies_strict_mode():
+    from app.rubric.builder import SUBMISSION_CONTEXT_JSON_SCHEMA
+
+    assert SUBMISSION_CONTEXT_JSON_SCHEMA["additionalProperties"] is False
+    assert set(SUBMISSION_CONTEXT_JSON_SCHEMA["properties"].keys()) == set(
+        SUBMISSION_CONTEXT_JSON_SCHEMA["required"]
+    )
+

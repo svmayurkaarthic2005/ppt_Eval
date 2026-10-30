@@ -58,7 +58,8 @@ SUBMISSION_CONTEXT_JSON_SCHEMA = {
         "track_constraints",
         "is_generic",
         "generic_reason",
-    ],  # solution_type is optional -- _parse_submission_context defaults to "unknown"
+        "solution_type",
+    ],
     "additionalProperties": False,
 }
 
