@@ -135,6 +135,7 @@ export default function RankingTable({
   onDeleteRow,
   onReEvaluateRow,
   linkToTeam = true,
+  isAdmin,
 }: {
   rows: RankingRow[];
   sectionKeys: string[];
@@ -147,7 +148,10 @@ export default function RankingTable({
    * you can open a team page) is admin-only -- general viewers get a
    * read-only rank table with no navigable rows. */
   linkToTeam?: boolean;
+  /** When false (viewer mode), Reliability, Flags, and Actions columns are hidden */
+  isAdmin?: boolean;
 }) {
+  const isUserAdmin = isAdmin ?? linkToTeam;
   const [reEvaluatingId, setReEvaluatingId] = useState<string | null>(null);
 
   async function handleReEvaluate(row: RankingRow) {
@@ -165,7 +169,7 @@ export default function RankingTable({
       <table className="w-full min-w-max text-left text-sm border-collapse">
         <thead>
           <tr className="border-b border-slate-200/80 bg-slate-50/90 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-            {linkToTeam && <th className="px-4 py-3.5 w-10"></th>}
+            {isUserAdmin && <th className="px-4 py-3.5 w-10"></th>}
             <th className="px-4 py-3.5">Rank</th>
             <th className="px-4 py-3.5">Team & Project</th>
             {/* Hidden below sm: the score is shown inline under the team
@@ -189,9 +193,11 @@ export default function RankingTable({
                   : key.replace(/_/g, " ")}
               </th>
             ))}
-            <th className="px-4 py-3.5">Reliability</th>
-            <th className="px-4 py-3.5 text-center">Flags</th>
-            {(onDeleteRow || onReEvaluateRow) && <th className="px-4 py-3.5 text-right">Actions</th>}
+            {isUserAdmin && <th className="px-4 py-3.5">Reliability</th>}
+            {isUserAdmin && <th className="px-4 py-3.5 text-center">Flags</th>}
+            {isUserAdmin && (onDeleteRow || onReEvaluateRow) && (
+              <th className="px-4 py-3.5 text-right">Actions</th>
+            )}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -205,7 +211,7 @@ export default function RankingTable({
                   isSelected ? "bg-indigo-50/70" : "hover:bg-slate-50/80"
                 }`}
               >
-                {linkToTeam && (
+                {isUserAdmin && (
                   <td className="px-4 py-3.5">
                     <input
                       type="checkbox"
@@ -220,21 +226,13 @@ export default function RankingTable({
                   <RankCell row={row} onSetManualRank={onSetManualRank} />
                 </td>
                 <td className="px-4 py-3.5">
-                  {linkToTeam ? (
+                  {isUserAdmin ? (
                     <Link to={`/team/${row.submission_id}`} className="group block">
                       <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition text-sm">
                         {row.team_name}
                       </span>
                       <span className="block text-[11px] text-slate-600">
                         ID: {row.submission_id.slice(0, 8)}...
-                      </span>
-                      {/* Score shown here only below sm, mirroring the
-                          standalone Total Score column that's hidden there. */}
-                      <span className="mt-1 flex items-center gap-1.5 sm:hidden">
-                        <span className="font-extrabold tabular-nums text-slate-900 text-sm">
-                          {Number(row.total.toFixed(2))}
-                        </span>
-                        <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
                       </span>
                     </Link>
                   ) : (
@@ -268,23 +266,27 @@ export default function RankingTable({
                     {row.section_totals[key] != null ? Number(row.section_totals[key].toFixed(2)) : "-"}
                   </td>
                 ))}
-                <td className="px-4 py-3.5">
-                  {row.reliability_label && (
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${RELIABILITY_COLORS[row.reliability_label]}`}
-                    >
-                      {row.reliability_label}
+                {isUserAdmin && (
+                  <td className="px-4 py-3.5">
+                    {row.reliability_label && (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${RELIABILITY_COLORS[row.reliability_label]}`}
+                      >
+                        {row.reliability_label}
+                      </span>
+                    )}
+                  </td>
+                )}
+                {isUserAdmin && (
+                  <td className="px-4 py-3.5 text-center">
+                    <span className={`inline-flex h-6 min-w-[24px] items-center justify-center rounded-full px-2 text-xs font-bold ${
+                      row.flag_count > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {row.flag_count}
                     </span>
-                  )}
-                </td>
-                <td className="px-4 py-3.5 text-center">
-                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center rounded-full px-2 text-xs font-bold ${
-                    row.flag_count > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
-                  }`}>
-                    {row.flag_count}
-                  </span>
-                </td>
-                {(onDeleteRow || onReEvaluateRow) && (
+                  </td>
+                )}
+                {isUserAdmin && (onDeleteRow || onReEvaluateRow) && (
                   <td className="px-4 py-3.5 text-right whitespace-nowrap">
                     <div className="inline-flex items-center justify-end gap-1.5">
                       {onReEvaluateRow && (

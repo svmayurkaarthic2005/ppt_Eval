@@ -534,6 +534,7 @@ function ProblemStatementGroupCard({
             onDeleteRow={isAdmin ? onDeleteRow : undefined}
             onReEvaluateRow={isAdmin ? onReEvaluateRow : undefined}
             linkToTeam={isAdmin}
+            isAdmin={isAdmin}
           />
         </div>
       )}
@@ -779,14 +780,14 @@ export default function Home() {
 
   function handleDownloadCsv() {
     if (view === "overall") {
-      const csv = rankingRowsToCsv(overall ?? [], overallSectionKeys, false);
+      const csv = rankingRowsToCsv(overall ?? [], overallSectionKeys, false, isAdmin);
       downloadCsv(csv, "hackeval-leaderboard-overall.csv");
     } else {
       const rows = (groups ?? []).flatMap((g) =>
         g.submissions.map((row) => ({ ...row, problem_statement: g.title })),
       );
       const sectionKeys = sectionKeysOf(rows);
-      const csv = rankingRowsToCsv(rows, sectionKeys, true);
+      const csv = rankingRowsToCsv(rows, sectionKeys, true, isAdmin);
       downloadCsv(csv, "hackeval-leaderboard-by-problem-statement.csv");
     }
   }
@@ -1131,6 +1132,7 @@ export default function Home() {
           onDeleteRow={isAdmin ? handleDeleteRow : undefined}
           onReEvaluateRow={isAdmin ? handleReEvaluateRow : undefined}
           linkToTeam={isAdmin}
+          isAdmin={isAdmin}
         />
       )}
 

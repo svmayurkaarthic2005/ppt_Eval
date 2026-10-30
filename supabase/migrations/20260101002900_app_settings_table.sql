@@ -9,3 +9,4 @@ create table if not exists app_settings (
 insert into app_settings (key, value)
 values ('leaderboard_published', '{"published": false}'::jsonb)
 on conflict (key) do nothing;
+
