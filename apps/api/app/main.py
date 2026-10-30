@@ -3,9 +3,11 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 import asyncpg
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Windows subprocess support (LibreOffice rendering) needs
 # WindowsProactorEventLoopPolicy set *before* uvicorn creates its event
@@ -74,20 +76,56 @@ app.add_middleware(
 )
 
 
+def _cors_headers(request: Request) -> dict[str, str]:
+    """Returns CORS headers mirroring CORSMiddleware's allow_origin_regex so
+    that error responses (4xx/5xx) — which bypass the middleware's response
+    path — still carry the correct headers and aren't blocked by the browser."""
+    import re
+    origin = request.headers.get("origin", "")
+    _ALLOW_RE = re.compile(
+        r"^https?://(localhost|127\.0\.0\.1|.*\.onrender\.com|.*\.vercel\.app)(:\d+)?$"
+    )
+    allowed_origin = origin if origin and _ALLOW_RE.match(origin) else ""
+    headers: dict[str, str] = {}
+    if allowed_origin:
+        headers["Access-Control-Allow-Origin"] = allowed_origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "*"
+        headers["Access-Control-Allow-Headers"] = "*"
+    return headers
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Ensures CORS headers are present on ALL HTTP error responses (4xx/5xx).
+    Without this, Render's infrastructure-level 429s and Starlette's own
+    HTTPException responses omit Access-Control-Allow-Origin, causing the
+    browser to report a CORS error instead of the real status code."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=_cors_headers(request),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """422 validation errors also need CORS headers for the browser to read them."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+        headers=_cors_headers(request),
+    )
+
+
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
+async def global_exception_handler(request: Request, exc: Exception):
     import logging
     logging.getLogger("uvicorn.error").exception("Unhandled error on %s: %s", request.url, exc)
-    origin = request.headers.get("origin", "*")
     return JSONResponse(
         status_code=500,
         content={"detail": str(exc)},
-        headers={
-            "Access-Control-Allow-Origin": origin if origin else "*",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Headers": "*",
-        },
+        headers=_cors_headers(request),
     )
 
 
