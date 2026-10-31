@@ -380,4 +380,14 @@ export async function reEvaluateSubmission(submissionId: string): Promise<Submis
   return parseOrThrow(response);
 }
 
+export async function reevaluateAllFailedSubmissions(): Promise<{ requeued_count: number; submission_ids: string[] }> {
+  const token = await getAccessToken();
+  const response = await fetch(`${API_URL}/submissions/reevaluate-failed`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseOrThrow(response);
+}
+
+
 

@@ -616,18 +616,48 @@ async def post_with_backoff(
                         request=request_obj,
                         response=response,
                     )
+                pool.advance_round_robin()
                 return response
             last_exc = httpx.HTTPStatusError(
                 f"Groq returned {status_code}: {resp_text}",
                 request=request_obj,
                 response=response,
             )
-            if (
-                status_code == 429
-                and _is_daily_quota_error(resp_text)
-                and (pool.current != current_key or pool.mark_exhausted(current_key))
-            ):
-                continue  # fresh key, fresh quota -- retry now, no backoff wait
+            if status_code == 429:
+                if _is_daily_quota_error(resp_text):
+                    logger.warning(
+                        "Groq daily quota error on key ...%s; rotating to next key in pool",
+                        current_key[-4:] if len(current_key) >= 4 else "...",
+                    )
+                    if pool.current != current_key or pool.mark_exhausted(current_key):
+                        continue  # fresh key, fresh quota -- retry now, no backoff wait
+                else:
+                    retry_wait = 5.0
+                    header_val = (
+                        response.headers.get("retry-after")
+                        if hasattr(response, "headers")
+                        else None
+                    )
+                    if header_val:
+                        try:
+                            retry_wait = float(header_val)
+                        except ValueError:
+                            pass
+                    elif resp_text:
+                        import re
+
+                        m = re.search(r"try again in (\d+(?:\.\d+)?)s", resp_text, re.IGNORECASE)
+                        if m:
+                            retry_wait = float(m.group(1)) + 0.5
+
+                    if pool.mark_throttled(current_key, retry_wait):
+                        logger.warning(
+                            "Groq rate limit (429) on key ...%s; switching immediately to key ...%s",
+                            current_key[-4:] if len(current_key) >= 4 else "...",
+                            pool.current[-4:] if len(pool.current) >= 4 else "...",
+                        )
+                        continue  # Next key available -- retry immediately!
+
 
         retry_after = 0.0
         if isinstance(last_exc, httpx.HTTPStatusError):

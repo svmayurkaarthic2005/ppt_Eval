@@ -329,6 +329,11 @@ async def build_rubric_for_submission(
 
     template = await _get_default_template(conn)
 
+    await conn.execute(
+        "delete from consistency_flags where submission_id = $1 and flag_type in ('rubric_context_unavailable', 'generic_problem_statement')",
+        submission_id,
+    )
+
     try:
         context = await extract_submission_context(submission["problem_statement_text"] or "")
     except SubmissionContextUnavailableError as exc:

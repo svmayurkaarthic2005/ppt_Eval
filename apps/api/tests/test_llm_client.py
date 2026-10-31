@@ -715,9 +715,9 @@ async def test_post_with_backoff_rotates_key_on_daily_quota_429():
     assert pool.current == "key-b"  # rotation persists for subsequent calls
 
 
-async def test_post_with_backoff_does_not_rotate_on_a_per_minute_429(monkeypatch):
-    """A TPM/ITPM 429 recovers on its own in under a minute -- rotating keys
-    for it would just shift load around. It must retry the SAME key."""
+async def test_post_with_backoff_rotates_on_per_minute_429_when_alternative_key_available(monkeypatch):
+    """When multiple keys are available and one hits a 429 rate limit, it switches
+    immediately to the next key so scoring is not blocked by one key's minute limit."""
     monkeypatch.setattr("app.llm.client.NETWORK_BACKOFF_BASE_SECONDS", 0.0)
 
     async def fake_sleep(_seconds):
@@ -741,8 +741,36 @@ async def test_post_with_backoff_does_not_rotate_on_a_per_minute_429(monkeypatch
     response = await post_with_backoff(fake_client, {"model": "x"}, pool)
 
     assert response.status_code == 200
+    assert fake_client.auth_headers_seen == ["Bearer key-a", "Bearer key-b"]
+
+
+async def test_post_with_backoff_retries_same_key_when_no_alternative_key(monkeypatch):
+    """When only a single key is configured, a 429 rate limit retries the same key with backoff."""
+    monkeypatch.setattr("app.llm.client.NETWORK_BACKOFF_BASE_SECONDS", 0.0)
+
+    async def fake_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr("app.llm.client.asyncio.sleep", fake_sleep)
+
+    tpm_error = {
+        "error": {
+            "message": "Rate limit reached ... on tokens per minute (TPM): Limit 8000, Used 7900, Requested 500.",
+            "type": "tokens",
+        }
+    }
+    responses = [
+        _groq_response(429, tpm_error),
+        _groq_response(200, {"choices": [{"message": {"content": "ok"}}]}),
+    ]
+    fake_client = _FakeAsyncClient(responses)
+    pool = GroqKeyPool(["key-a"])
+
+    response = await post_with_backoff(fake_client, {"model": "x"}, pool)
+
+    assert response.status_code == 200
     assert fake_client.auth_headers_seen == ["Bearer key-a", "Bearer key-a"]
-    assert pool.current == "key-a"  # never rotated
+
 
 
 async def test_post_with_backoff_accepts_a_plain_string_key():

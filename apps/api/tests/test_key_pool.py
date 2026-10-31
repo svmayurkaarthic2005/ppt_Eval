@@ -81,3 +81,30 @@ def test_get_key_pool_reads_all_three_configured_keys(monkeypatch):
     assert len(pool) == 3
     assert pool.current == "key-1"
     key_pool_module.get_key_pool.cache_clear()
+
+
+def test_mark_throttled_switches_to_next_available_key():
+    pool = GroqKeyPool(["key-a", "key-b", "key-c"])
+    assert pool.current == "key-a"
+    rotated = pool.mark_throttled("key-a", wait_seconds=5.0)
+    assert rotated is True
+    assert pool.current == "key-b"
+    # When key-b is also throttled, rotates to key-c
+    rotated2 = pool.mark_throttled("key-b", wait_seconds=5.0)
+    assert rotated2 is True
+    assert pool.current == "key-c"
+    # When all are throttled, mark_throttled returns False
+    rotated3 = pool.mark_throttled("key-c", wait_seconds=5.0)
+    assert rotated3 is False
+
+
+def test_advance_round_robin_distributes_across_usable_keys():
+    pool = GroqKeyPool(["key-a", "key-b", "key-c"])
+    assert pool.current == "key-a"
+    pool.advance_round_robin()
+    assert pool.current == "key-b"
+    pool.advance_round_robin()
+    assert pool.current == "key-c"
+    pool.advance_round_robin()
+    assert pool.current == "key-a"
+

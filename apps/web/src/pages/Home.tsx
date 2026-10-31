@@ -18,6 +18,7 @@ import {
   getSubmissionStats,
   listProblemStatements,
   reEvaluateSubmission,
+  reevaluateAllFailedSubmissions,
   setLeaderboardPublishStatus,
   setManualRank,
   triggerStage2Selection,
@@ -566,6 +567,7 @@ export default function Home() {
     published_at: null,
   });
   const [togglingPublish, setTogglingPublish] = useState(false);
+  const [reEvaluatingFailed, setReEvaluatingFailed] = useState(false);
   const navigate = useNavigate();
 
   function loadPublishStatus(): void {
@@ -585,6 +587,24 @@ export default function Home() {
       setError(err instanceof ApiError ? err.message : "Failed to update publication status.");
     } finally {
       setTogglingPublish(false);
+    }
+  }
+
+  async function handleReEvaluateAllFailed(): Promise<void> {
+    const ok = await confirm(
+      "Re-evaluate all 0-score and failed submissions? Stale flags will be wiped and full scoring will re-run fresh across all active Groq API keys.",
+    );
+    if (!ok) return;
+    setReEvaluatingFailed(true);
+    try {
+      const res = await reevaluateAllFailedSubmissions();
+      alert(`Queued re-evaluation for ${res.requeued_count} submissions!`);
+      loadRankings();
+      loadStats();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to re-evaluate submissions.");
+    } finally {
+      setReEvaluatingFailed(false);
     }
   }
 
@@ -1008,41 +1028,65 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            disabled={togglingPublish}
-            onClick={handleTogglePublish}
-            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition shadow-sm ${
-              publishStatus.is_published
-                ? "bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200"
-                : "bg-emerald-600 text-white hover:bg-emerald-700"
-            } disabled:opacity-50`}
-          >
-            {togglingPublish ? (
-              <>
-                <svg className="h-4 w-4 animate-spin text-current" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                Updating...
-              </>
-            ) : publishStatus.is_published ? (
-              <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                </svg>
-                Unpublish Leaderboard
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-                Publish Leaderboard
-              </>
-            )}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={reEvaluatingFailed}
+              onClick={handleReEvaluateAllFailed}
+              title="Re-run evaluation for any decks that scored 0 or encountered rate limits"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-800 transition shadow-sm hover:bg-amber-100 disabled:opacity-50"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                className={`h-4 w-4 text-amber-700 ${reEvaluatingFailed ? "animate-spin" : ""}`}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              {reEvaluatingFailed ? "Queuing..." : "Re-evaluate 0-Score Decks"}
+            </button>
+            <button
+              type="button"
+              disabled={togglingPublish}
+              onClick={handleTogglePublish}
+              className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition shadow-sm ${
+                publishStatus.is_published
+                  ? "bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700"
+              } disabled:opacity-50`}
+            >
+              {togglingPublish ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin text-current" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Updating...
+                </>
+              ) : publishStatus.is_published ? (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  </svg>
+                  Unpublish Leaderboard
+                </>
+              ) : (
+                <>
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  Publish Leaderboard
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
 

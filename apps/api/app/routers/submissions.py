@@ -728,12 +728,16 @@ async def reevaluate_submission(
             raise HTTPException(status_code=404, detail="Submission not found")
 
         # Reset status so the full pipeline runs: rendering → rubric-build →
-        # stage1 → stage2.  Clearing criterion_scores lets stage2 re-score
-        # all criteria fresh instead of resuming from potentially bad old scores.
+        # stage1 → stage2. Clearing criterion_scores and consistency_flags lets
+        # stage2 re-score all criteria fresh instead of inheriting stale flags or 0 scores.
         await conn.execute(
             "update submissions set is_stale = true, status = 'rendering', "
-            "preliminary_score = null, preliminary_flagged = false where id = $1",
+            "preliminary_score = null, preliminary_flagged = false, "
+            "reliability_label = null, submission_context = null where id = $1",
             submission_id,
+        )
+        await conn.execute(
+            "delete from consistency_flags where submission_id = $1", submission_id
         )
         await conn.execute(
             "delete from criterion_scores where submission_id = $1", submission_id
@@ -767,6 +771,50 @@ async def reevaluate_submission(
             submission_id,
         )
         return Submission(**dict(row))
+
+
+@router.post("/reevaluate-failed")
+async def reevaluate_all_failed(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    _admin_id: str = Depends(get_current_admin_id),
+) -> dict[str, Any]:
+    """Admin-only batch action: finds all submissions that either failed or
+    ended up with a total score of 0 due to transient LLM rate limits/errors,
+    resets them, and re-queues them to 'render_slides'."""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select distinct s.id, t.name as team_name
+            from submissions s
+            left join teams t on t.id = s.team_id
+            left join final_scores fs on fs.submission_id = s.id
+            where s.status = 'failed'
+               or (s.status = 'scored' and (fs.computed_total is null or fs.computed_total = 0))
+            """
+        )
+        sub_ids = [r["id"] for r in rows]
+        for sub_id in sub_ids:
+            await conn.execute(
+                "update submissions set is_stale = true, status = 'rendering', "
+                "preliminary_score = null, preliminary_flagged = false, "
+                "reliability_label = null, submission_context = null where id = $1",
+                sub_id,
+            )
+            await conn.execute("delete from consistency_flags where submission_id = $1", sub_id)
+            await conn.execute("delete from criterion_scores where submission_id = $1", sub_id)
+            await conn.execute("delete from final_scores where submission_id = $1", sub_id)
+            await conn.execute(
+                "update jobs set status = 'failed', last_error = 'superseded by bulk re-evaluate' "
+                "where submission_id = $1 and status in ('queued', 'running')",
+                sub_id,
+            )
+            await conn.execute(
+                "insert into jobs (submission_id, job_type) values ($1, 'render_slides')",
+                sub_id,
+            )
+            invalidate_for_submission(sub_id)
+
+    return {"requeued_count": len(sub_ids), "submission_ids": [str(s) for s in sub_ids]}
 
 
 @router.delete("/{submission_id}")
