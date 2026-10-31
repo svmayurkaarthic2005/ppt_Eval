@@ -155,6 +155,7 @@ export default function RankingTable({
   activeEvaluatingIds?: Set<string>;
 }) {
   const isUserAdmin = Boolean(isAdmin);
+  const canLinkToTeam = Boolean(isAdmin && linkToTeam);
   const [reEvaluatingId, setReEvaluatingId] = useState<string | null>(null);
 
   async function handleReEvaluate(row: RankingRow) {
@@ -236,7 +237,7 @@ export default function RankingTable({
                   <RankCell row={row} onSetManualRank={onSetManualRank} />
                 </td>
                 <td className="px-4 py-3.5">
-                  {isUserAdmin ? (
+                  {canLinkToTeam ? (
                     <Link to={`/team/${row.submission_id}`} className="group block">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition text-sm">

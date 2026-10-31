@@ -882,11 +882,9 @@ export default function Home() {
         "Bulk Re-evaluation Queued",
         `Queued ${ids.length} submissions for scoring. Updates will stream in live.`,
       );
-      let successCount = 0;
       for (const id of ids) {
         try {
           await reEvaluateSubmission(id);
-          successCount++;
         } catch (e) {
           console.error(`Failed to re-evaluate ${id}:`, e);
         }
