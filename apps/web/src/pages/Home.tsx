@@ -676,11 +676,33 @@ export default function Home() {
 
   function loadRankings() {
     getOverallRanking()
-      .then(setOverall)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load rankings."));
+      .then((data) => {
+        setOverall(data);
+        setError(null);
+      })
+      .catch((err) => {
+        // Only set fatal error if we don't have rankings yet.
+        // If data is already displayed, a polling glitch must never destroy the user's dashboard!
+        setOverall((curr) => {
+          if (curr === null) {
+            setError(err instanceof ApiError ? err.message : "Could not load rankings.");
+          }
+          return curr;
+        });
+      });
+
     getRankingByProblemStatement()
-      .then(setGroups)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load rankings."));
+      .then((data) => {
+        setGroups(data);
+      })
+      .catch((err) => {
+        setGroups((curr) => {
+          if (curr === null) {
+            setError(err instanceof ApiError ? err.message : "Could not load rankings.");
+          }
+          return curr;
+        });
+      });
   }
 
   function loadProblemStatementsData() {
@@ -917,15 +939,34 @@ export default function Home() {
     return allProblemStatements.filter((ps) => !activeIds.has(ps.id));
   }, [allProblemStatements, groups]);
 
-  if (error) {
+  if (error && overall === null) {
     return (
       <main className="flex min-h-[calc(100vh-57px)] items-center justify-center p-6">
-        <div className="stitch-card max-w-md rounded-2xl p-6 text-center">
-          <p className="font-semibold text-red-600">{error}</p>
+        <div className="stitch-card max-w-md rounded-2xl p-8 text-center shadow-lg border border-slate-200">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-base font-bold text-slate-900 mb-1">Connection Issue</h2>
+          <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+            {error}. The server may be warming up from standby. Click below to reconnect.
+          </p>
           <button
-            onClick={() => window.location.reload()}
-            className="mt-4 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white"
+            type="button"
+            onClick={() => {
+              setError(null);
+              loadRankings();
+              loadPublishStatus();
+              loadStats();
+              loadAdminDashboardStats();
+              loadProblemStatementsData();
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-indigo-100 hover:bg-indigo-700 transition"
           >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
             Retry Connection
           </button>
         </div>

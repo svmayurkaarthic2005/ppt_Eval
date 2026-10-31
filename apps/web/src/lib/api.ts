@@ -35,6 +35,31 @@ async function parseOrThrow<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function fetchWithRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  retries = 2,
+  delayMs = 1200,
+): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(input, init);
+      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  return fetch(input, init);
+}
+
 export async function previewProblemStatement(
   file: File,
 ): Promise<{ text: string; usable: boolean }> {
@@ -191,7 +216,7 @@ export async function getSubmissionStats(): Promise<{
   scored: number;
   in_progress: boolean;
 }> {
-  const response = await fetch(`${API_URL}/submissions/stats`);
+  const response = await fetchWithRetry(`${API_URL}/submissions/stats`);
   return parseOrThrow(response);
 }
 
@@ -201,7 +226,7 @@ export interface LeaderboardPublishStatus {
 }
 
 export async function getLeaderboardPublishStatus(): Promise<LeaderboardPublishStatus> {
-  const response = await fetch(`${API_URL}/rankings/status`);
+  const response = await fetchWithRetry(`${API_URL}/rankings/status`);
   return parseOrThrow(response);
 }
 
@@ -226,7 +251,7 @@ export async function getOverallRanking(): Promise<RankingRow[]> {
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const response = await fetch(`${API_URL}/rankings/overall`, { headers });
+  const response = await fetchWithRetry(`${API_URL}/rankings/overall`, { headers });
   return parseOrThrow(response);
 }
 
@@ -236,12 +261,12 @@ export async function getRankingByProblemStatement(): Promise<ProblemStatementGr
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const response = await fetch(`${API_URL}/rankings/by-problem-statement`, { headers });
+  const response = await fetchWithRetry(`${API_URL}/rankings/by-problem-statement`, { headers });
   return parseOrThrow(response);
 }
 
 export async function listProblemStatements(): Promise<ProblemStatement[]> {
-  const response = await fetch(`${API_URL}/problem-statements/`);
+  const response = await fetchWithRetry(`${API_URL}/problem-statements/`);
   return parseOrThrow(response);
 }
 
