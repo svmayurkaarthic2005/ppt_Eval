@@ -1122,6 +1122,8 @@ export default function Team() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reEvaluating, setReEvaluating] = useState(false);
+  const [reEvaluateSuccess, setReEvaluateSuccess] = useState(false);
+  const [reEvaluateError, setReEvaluateError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
@@ -1163,9 +1165,13 @@ export default function Team() {
   async function handleReEvaluate() {
     if (!id) return;
     setReEvaluating(true);
+    setReEvaluateError(null);
+    setReEvaluateSuccess(false);
     try {
       const updated = await reEvaluateSubmission(id);
       setSubmission(updated);
+      setReEvaluateSuccess(true);
+      setTimeout(() => setReEvaluateSuccess(false), 5000);
       const [e, a] = await Promise.all([
         getSubmissionEvidence(id),
         getSubmissionAudit(id),
@@ -1173,7 +1179,7 @@ export default function Team() {
       if (e) setEvidence(e);
       if (a) setAudit(a);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not re-evaluate submission");
+      setReEvaluateError(err instanceof Error ? err.message : "Could not re-evaluate submission");
     } finally {
       setReEvaluating(false);
     }
@@ -1439,7 +1445,11 @@ export default function Team() {
             type="button"
             onClick={handleReEvaluate}
             disabled={reEvaluating}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200/80 bg-indigo-50/70 px-3.5 py-2 text-xs font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-600 hover:text-white hover:border-indigo-600 disabled:opacity-50"
+            className={`group inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold shadow-sm transition-all duration-300 ${
+              reEvaluating
+                ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white cursor-wait ring-2 ring-indigo-300 shadow-md"
+                : "border border-indigo-200/80 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 active:scale-95"
+            } disabled:opacity-75`}
             title="Re-run scoring pipeline on this submission"
           >
             <svg
@@ -1447,7 +1457,9 @@ export default function Team() {
               fill="none"
               stroke="currentColor"
               strokeWidth={2}
-              className={`h-4 w-4 ${reEvaluating ? "animate-spin" : ""}`}
+              className={`h-4 w-4 transition-transform duration-500 ${
+                reEvaluating ? "animate-spin text-white" : "group-hover:rotate-180"
+              }`}
             >
               <path
                 strokeLinecap="round"
@@ -1455,7 +1467,7 @@ export default function Team() {
                 d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
               />
             </svg>
-            {reEvaluating ? "Queuing..." : "Re-Evaluate"}
+            <span>{reEvaluating ? "Evaluating Deck..." : "Re-Evaluate"}</span>
           </button>
           )}
 
@@ -1523,6 +1535,56 @@ export default function Team() {
               </>
             )}
           </button>
+        </div>
+      )}
+
+      {reEvaluating && (
+        <div className="flex items-center gap-3.5 rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/90 via-purple-50/90 to-indigo-50/90 p-4 shadow-sm animate-slide-up text-indigo-950">
+          <span className="relative flex h-3.5 w-3.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-500 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-indigo-600"></span>
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-indigo-950">Re-evaluation in progress</span>
+              <span className="inline-flex gap-0.5">
+                <span className="dot-1 h-1.5 w-1.5 rounded-full bg-indigo-600 inline-block" />
+                <span className="dot-2 h-1.5 w-1.5 rounded-full bg-indigo-600 inline-block" />
+                <span className="dot-3 h-1.5 w-1.5 rounded-full bg-indigo-600 inline-block" />
+              </span>
+            </div>
+            <p className="text-xs text-indigo-700 mt-0.5 leading-relaxed">
+              Live evaluation pipeline has reset stale flags, re-rendered slides, and is regenerating criterion scores across the 20-point rubric.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {reEvaluateSuccess && (
+        <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4 shadow-sm animate-slide-up text-emerald-900">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+          <div>
+            <p className="text-sm font-bold text-emerald-950">Evaluation Updated Successfully!</p>
+            <p className="text-xs text-emerald-700">Fresh scores, rubric criteria, and benchmarks are now live.</p>
+          </div>
+        </div>
+      )}
+
+      {reEvaluateError && (
+        <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 p-4 shadow-sm animate-slide-up text-rose-900">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-600 text-white">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </span>
+          <div>
+            <p className="text-sm font-bold text-rose-950">Re-evaluation Error</p>
+            <p className="text-xs text-rose-700">{reEvaluateError}</p>
+          </div>
         </div>
       )}
 

@@ -7,7 +7,6 @@ const NAV_LINKS = [{ to: "/", label: "Leaderboard & Rankings", end: true }];
 
 const ADMIN_NAV_LINKS = [
   { to: "/upload", label: "Upload Deck", end: false },
-  { to: "/dashboard", label: "Admin Dashboard", end: false },
   { to: "/admin/calibration", label: "Human Calibration", end: false },
 ];
 

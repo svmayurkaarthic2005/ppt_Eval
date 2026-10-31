@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import RankingTable from "../components/RankingTable";
@@ -455,6 +455,7 @@ function ProblemStatementGroupCard({
   onReEvaluateRow,
   onDeleteGroup,
   isAdmin,
+  activeEvaluatingIds,
 }: {
   group: ProblemStatementGroup;
   selected: Set<string>;
@@ -464,6 +465,7 @@ function ProblemStatementGroupCard({
   onReEvaluateRow?: (row: RankingRow) => Promise<void> | void;
   onDeleteGroup: (group: ProblemStatementGroup) => void;
   isAdmin: boolean;
+  activeEvaluatingIds?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(group.submission_count <= AUTO_EXPAND_MAX_SIZE);
   const sectionKeys = useMemo(() => sectionKeysOf(group.submissions), [group.submissions]);
@@ -536,6 +538,7 @@ function ProblemStatementGroupCard({
             onReEvaluateRow={isAdmin ? onReEvaluateRow : undefined}
             linkToTeam={isAdmin}
             isAdmin={isAdmin}
+            activeEvaluatingIds={activeEvaluatingIds}
           />
         </div>
       )}
@@ -568,7 +571,22 @@ export default function Home() {
   });
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [reEvaluatingFailed, setReEvaluatingFailed] = useState(false);
+  const [evaluatingIds, setEvaluatingIds] = useState<Set<string>>(new Set());
+  const [toasts, setToasts] = useState<
+    Array<{ id: string; type: "success" | "info" | "error"; title: string; detail?: string }>
+  >([]);
   const navigate = useNavigate();
+
+  const showToast = useCallback(
+    (type: "success" | "info" | "error", title: string, detail?: string) => {
+      const id = Math.random().toString(36).slice(2, 9);
+      setToasts((prev) => [...prev, { id, type, title, detail }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 4500);
+    },
+    [],
+  );
 
   function loadPublishStatus(): void {
     getLeaderboardPublishStatus()
@@ -583,8 +601,20 @@ export default function Home() {
       const updated = await setLeaderboardPublishStatus(nextState);
       setPublishStatus(updated);
       loadRankings();
+      showToast(
+        "success",
+        nextState ? "Leaderboard Published!" : "Leaderboard Unpublished",
+        nextState
+          ? "Scores and rankings are now visible to public viewers."
+          : "Rankings are now hidden from public viewers.",
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update publication status.");
+      showToast(
+        "error",
+        "Publish Update Failed",
+        err instanceof ApiError ? err.message : "Failed to update publication status.",
+      );
     } finally {
       setTogglingPublish(false);
     }
@@ -598,11 +628,22 @@ export default function Home() {
     setReEvaluatingFailed(true);
     try {
       const res = await reevaluateAllFailedSubmissions();
-      alert(`Queued re-evaluation for ${res.requeued_count} submissions!`);
+      if (res.submission_ids && res.submission_ids.length > 0) {
+        setEvaluatingIds((prev) => new Set([...prev, ...res.submission_ids]));
+      }
+      showToast(
+        "info",
+        "Batch Re-evaluation Started",
+        `Queued ${res.requeued_count} submissions! Scores will automatically refresh live as they complete.`,
+      );
       loadRankings();
       loadStats();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to re-evaluate submissions.");
+      showToast(
+        "error",
+        "Re-evaluation Failed",
+        err instanceof Error ? err.message : "Failed to re-evaluate submissions.",
+      );
     } finally {
       setReEvaluatingFailed(false);
     }
@@ -670,6 +711,41 @@ export default function Home() {
     }, 4000);
     return () => clearInterval(interval);
   }, [isAdmin]);
+
+  // Active tracking for currently evaluating submission IDs
+  useEffect(() => {
+    if (evaluatingIds.size === 0) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const fresh = await getOverallRanking();
+        if (fresh) {
+          setOverall(fresh);
+          setEvaluatingIds((prev) => {
+            const next = new Set(prev);
+            for (const id of prev) {
+              const row = fresh.find((r) => r.submission_id === id);
+              if (row && row.total > 0) {
+                next.delete(id);
+                showToast(
+                  "success",
+                  "Scoring Complete!",
+                  `"${row.team_name}" finished scoring with total: ${Number(row.total.toFixed(2))}/${row.max_total}`,
+                );
+              }
+            }
+            return next;
+          });
+        }
+        getRankingByProblemStatement().then(setGroups).catch(() => {});
+        loadStats();
+      } catch (e) {
+        console.error("Evaluation poll failed:", e);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [evaluatingIds, showToast]);
 
   async function handleTriggerStage2() {
     setTriggeringStage2(true);
@@ -745,13 +821,27 @@ export default function Home() {
   }
 
   async function handleReEvaluateRow(row: RankingRow) {
+    setEvaluatingIds((prev) => new Set([...prev, row.submission_id]));
+    showToast(
+      "info",
+      "Re-evaluation Started",
+      `Analyzing presentation deck for "${row.team_name}". Full scoring pipeline has restarted.`,
+    );
     try {
       await reEvaluateSubmission(row.submission_id);
-      alert(`Re-evaluation queued for "${row.team_name}". Full scoring pipeline has restarted.`);
       loadRankings();
       loadStats();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to re-evaluate submission");
+      setEvaluatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(row.submission_id);
+        return next;
+      });
+      showToast(
+        "error",
+        "Re-evaluation Failed",
+        err instanceof Error ? err.message : "Failed to re-evaluate submission",
+      );
     }
   }
 
@@ -764,6 +854,12 @@ export default function Home() {
     setBulkReEvaluating(true);
     try {
       const ids = Array.from(selected);
+      setEvaluatingIds((prev) => new Set([...prev, ...ids]));
+      showToast(
+        "info",
+        "Bulk Re-evaluation Queued",
+        `Queued ${ids.length} submissions for scoring. Updates will stream in live.`,
+      );
       let successCount = 0;
       for (const id of ids) {
         try {
@@ -773,7 +869,6 @@ export default function Home() {
           console.error(`Failed to re-evaluate ${id}:`, e);
         }
       }
-      alert(`Re-evaluation successfully queued for ${successCount} of ${ids.length} submissions.`);
       setSelected(new Set());
       loadRankings();
       loadStats();
@@ -1034,14 +1129,22 @@ export default function Home() {
               disabled={reEvaluatingFailed}
               onClick={handleReEvaluateAllFailed}
               title="Re-run evaluation for any decks that scored 0 or encountered rate limits"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-800 transition shadow-sm hover:bg-amber-100 disabled:opacity-50"
+              className={`group relative inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition-all duration-300 shadow-sm ${
+                reEvaluatingFailed
+                  ? "bg-gradient-to-r from-amber-600 via-orange-500 to-amber-600 text-white shadow-amber-200 cursor-wait ring-2 ring-amber-300"
+                  : "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-400 active:scale-95"
+              } disabled:opacity-75`}
             >
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth={2}
-                className={`h-4 w-4 text-amber-700 ${reEvaluatingFailed ? "animate-spin" : ""}`}
+                strokeWidth={2.5}
+                className={`h-4 w-4 transition-transform duration-500 ${
+                  reEvaluatingFailed
+                    ? "animate-spin text-white"
+                    : "group-hover:rotate-180 text-amber-700"
+                }`}
               >
                 <path
                   strokeLinecap="round"
@@ -1049,7 +1152,7 @@ export default function Home() {
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </svg>
-              {reEvaluatingFailed ? "Queuing..." : "Re-evaluate 0-Score Decks"}
+              <span>{reEvaluatingFailed ? "Queuing Scoring..." : "Re-evaluate 0-Score Decks"}</span>
             </button>
             <button
               type="button"
@@ -1177,6 +1280,7 @@ export default function Home() {
           onReEvaluateRow={isAdmin ? handleReEvaluateRow : undefined}
           linkToTeam={isAdmin}
           isAdmin={isAdmin}
+          activeEvaluatingIds={evaluatingIds}
         />
       )}
 
@@ -1204,6 +1308,7 @@ export default function Home() {
               onReEvaluateRow={handleReEvaluateRow}
               onDeleteGroup={handleDeleteGroup}
               isAdmin={isAdmin}
+              activeEvaluatingIds={evaluatingIds}
             />
           ))}
 
@@ -1323,6 +1428,49 @@ export default function Home() {
           loadAdminDashboardStats();
         }}
       />
+      {/* Non-blocking Animated Toast Container */}
+      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2.5 max-w-sm pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto flex items-start gap-3 rounded-2xl p-4 shadow-xl border backdrop-blur-md transition-all duration-300 animate-slide-up ${
+              toast.type === "success"
+                ? "bg-slate-900/95 text-emerald-50 border-emerald-500/50 shadow-emerald-950/30"
+                : toast.type === "error"
+                ? "bg-slate-900/95 text-rose-50 border-rose-500/50 shadow-rose-950/30"
+                : "bg-slate-900/95 text-white border-indigo-500/50 shadow-indigo-950/30"
+            }`}
+          >
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white/10 mt-0.5">
+              {toast.type === "success" ? (
+                <svg className="h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : toast.type === "error" ? (
+                <svg className="h-4 w-4 text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4 text-indigo-400 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              )}
+            </span>
+            <div className="flex-1 min-w-0 pr-1">
+              <p className="text-xs font-bold leading-tight">{toast.title}</p>
+              {toast.detail && <p className="text-[11px] opacity-80 mt-1 leading-relaxed">{toast.detail}</p>}
+            </div>
+            <button
+              type="button"
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+              className="text-white/60 hover:text-white text-xs font-bold px-1"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
     </main>
   );
 }

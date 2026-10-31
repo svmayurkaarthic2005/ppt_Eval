@@ -40,7 +40,7 @@ export default function Compare() {
 
   useEffect(() => {
     if (ids.length < MIN_TEAMS) {
-      navigate("/dashboard", {
+      navigate("/", {
         state: { toast: "Select at least 2 teams to compare." },
       });
       return;
@@ -64,7 +64,7 @@ export default function Compare() {
   function handleRemove(submissionId: string) {
     const remaining = ids.filter((id) => id !== submissionId);
     if (remaining.length < MIN_TEAMS) {
-      navigate("/dashboard", {
+      navigate("/", {
         state: { toast: "At least 2 teams are needed to compare." },
       });
       return;

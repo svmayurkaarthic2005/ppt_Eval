@@ -150,8 +150,10 @@ export default function RankingTable({
   linkToTeam?: boolean;
   /** When false (viewer mode), Reliability, Flags, and Actions columns are hidden */
   isAdmin?: boolean;
+  /** Set of submission IDs currently undergoing active re-evaluation */
+  activeEvaluatingIds?: Set<string>;
 }) {
-  const isUserAdmin = isAdmin ?? linkToTeam;
+  const isUserAdmin = Boolean(isAdmin);
   const [reEvaluatingId, setReEvaluatingId] = useState<string | null>(null);
 
   async function handleReEvaluate(row: RankingRow) {
@@ -203,12 +205,19 @@ export default function RankingTable({
         <tbody className="divide-y divide-slate-100">
           {rows.map((row) => {
             const isSelected = selected.has(row.submission_id);
+            const isEvaluating =
+              Boolean(activeEvaluatingIds?.has(row.submission_id)) ||
+              reEvaluatingId === row.submission_id;
             const scorePct = row.max_total > 0 ? (row.total / row.max_total) * 100 : 0;
             return (
               <tr
                 key={row.submission_id}
-                className={`transition-colors duration-150 ${
-                  isSelected ? "bg-indigo-50/70" : "hover:bg-slate-50/80"
+                className={`transition-all duration-300 relative ${
+                  isEvaluating
+                    ? "bg-indigo-50/90 ring-1 ring-inset ring-indigo-300"
+                    : isSelected
+                    ? "bg-indigo-50/70"
+                    : "hover:bg-slate-50/80"
                 }`}
               >
                 {isUserAdmin && (
@@ -228,9 +237,17 @@ export default function RankingTable({
                 <td className="px-4 py-3.5">
                   {isUserAdmin ? (
                     <Link to={`/team/${row.submission_id}`} className="group block">
-                      <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition text-sm">
-                        {row.team_name}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition text-sm">
+                          {row.team_name}
+                        </span>
+                        {isEvaluating && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700 animate-pulse">
+                            <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 animate-ping" />
+                            Evaluating
+                          </span>
+                        )}
+                      </div>
                       <span className="block text-[11px] text-slate-600">
                         ID: {row.submission_id.slice(0, 8)}...
                       </span>
@@ -248,42 +265,77 @@ export default function RankingTable({
                   )}
                 </td>
                 <td className="hidden sm:table-cell whitespace-nowrap px-4 py-3.5">
-                  <div className="flex items-center gap-2.5">
-                    <span className="font-extrabold tabular-nums text-slate-900 text-sm">
-                      {Number(row.total.toFixed(2))}
-                    </span>
-                    <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
-                    <div className="hidden lg:block w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-indigo-600"
-                        style={{ width: `${Math.min(100, Math.max(0, scorePct))}%` }}
-                      />
+                  {isEvaluating ? (
+                    <div className="inline-flex items-center gap-2 rounded-xl bg-indigo-100/90 px-3 py-1.5 text-xs font-bold text-indigo-800 shadow-sm animate-pulse border border-indigo-200">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-500 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+                      </span>
+                      <span>Re-scoring deck</span>
+                      <span className="inline-flex gap-0.5 ml-0.5">
+                        <span className="dot-1 h-1 w-1 rounded-full bg-indigo-600 inline-block" />
+                        <span className="dot-2 h-1 w-1 rounded-full bg-indigo-600 inline-block" />
+                        <span className="dot-3 h-1 w-1 rounded-full bg-indigo-600 inline-block" />
+                      </span>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-2.5">
+                      <span className="font-extrabold tabular-nums text-slate-900 text-sm">
+                        {Number(row.total.toFixed(2))}
+                      </span>
+                      <span className="text-xs text-slate-600 font-medium">/ {Number(row.max_total.toFixed(2))}</span>
+                      <div className="hidden lg:block w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-indigo-600"
+                          style={{ width: `${Math.min(100, Math.max(0, scorePct))}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </td>
                 {sectionKeys.map((key) => (
                   <td key={key} className="hidden lg:table-cell px-4 py-3.5 text-slate-600 font-semibold tabular-nums text-xs sm:text-sm">
-                    {row.section_totals[key] != null ? Number(row.section_totals[key].toFixed(2)) : "-"}
+                    {isEvaluating ? (
+                      <span className="inline-block w-8 h-3 rounded bg-indigo-200/60 animate-pulse" />
+                    ) : (
+                      row.section_totals[key] != null ? Number(row.section_totals[key].toFixed(2)) : "-"
+                    )}
                   </td>
                 ))}
                 {isUserAdmin && (
                   <td className="px-4 py-3.5">
-                    {row.reliability_label && (
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${RELIABILITY_COLORS[row.reliability_label]}`}
-                      >
-                        {row.reliability_label}
+                    {isEvaluating ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200 shadow-sm animate-pulse">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 animate-ping-soft" />
+                        Analyzing
                       </span>
+                    ) : (
+                      row.reliability_label && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold ${RELIABILITY_COLORS[row.reliability_label]}`}
+                        >
+                          {row.reliability_label}
+                        </span>
+                      )
                     )}
                   </td>
                 )}
                 {isUserAdmin && (
                   <td className="px-4 py-3.5 text-center">
-                    <span className={`inline-flex h-6 min-w-[24px] items-center justify-center rounded-full px-2 text-xs font-bold ${
-                      row.flag_count > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
-                    }`}>
-                      {row.flag_count}
-                    </span>
+                    {isEvaluating ? (
+                      <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full px-2 text-xs font-bold bg-indigo-100/80 text-indigo-700 border border-indigo-200 animate-pulse">
+                        <svg className="h-3 w-3 animate-spin text-indigo-600" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                      </span>
+                    ) : (
+                      <span className={`inline-flex h-6 min-w-[24px] items-center justify-center rounded-full px-2 text-xs font-bold ${
+                        row.flag_count > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
+                      }`}>
+                        {row.flag_count}
+                      </span>
+                    )}
                   </td>
                 )}
                 {isUserAdmin && (onDeleteRow || onReEvaluateRow) && (
@@ -293,16 +345,24 @@ export default function RankingTable({
                         <button
                           type="button"
                           onClick={() => handleReEvaluate(row)}
-                          disabled={reEvaluatingId === row.submission_id}
+                          disabled={isEvaluating}
                           title={`Re-evaluate ${row.team_name}`}
-                          className="inline-flex items-center gap-1 rounded-xl border border-indigo-200/80 bg-indigo-50/70 px-2.5 py-1 text-xs font-semibold text-indigo-700 shadow-sm transition-all hover:bg-indigo-600 hover:text-white hover:border-indigo-600 disabled:opacity-50"
+                          className={`group relative inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold shadow-sm transition-all duration-300 overflow-hidden ${
+                            isEvaluating
+                              ? "bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white shadow-md shadow-indigo-200 cursor-wait ring-2 ring-indigo-300"
+                              : "border border-indigo-200/90 bg-indigo-50/70 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 hover:shadow-md hover:shadow-indigo-100 active:scale-95"
+                          }`}
                         >
                           <svg
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth={2}
-                            className={`h-3.5 w-3.5 ${reEvaluatingId === row.submission_id ? "animate-spin" : ""}`}
+                            strokeWidth={2.5}
+                            className={`h-3.5 w-3.5 transition-transform duration-500 ${
+                              isEvaluating
+                                ? "animate-spin text-white"
+                                : "group-hover:rotate-180 text-indigo-600 group-hover:text-white"
+                            }`}
                           >
                             <path
                               strokeLinecap="round"
@@ -310,7 +370,7 @@ export default function RankingTable({
                               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                             />
                           </svg>
-                          {reEvaluatingId === row.submission_id ? "Queuing..." : "Re-evaluate"}
+                          <span>{isEvaluating ? "Evaluating..." : "Re-evaluate"}</span>
                         </button>
                       )}
                       {onDeleteRow && (
