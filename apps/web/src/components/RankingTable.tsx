@@ -136,6 +136,7 @@ export default function RankingTable({
   onReEvaluateRow,
   linkToTeam = true,
   isAdmin,
+  activeEvaluatingIds,
 }: {
   rows: RankingRow[];
   sectionKeys: string[];
