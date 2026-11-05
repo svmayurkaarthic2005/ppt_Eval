@@ -768,6 +768,7 @@ async def _call_groq(
         for msg in messages
     )
 
+    primary_response_format: dict[str, Any]
     if has_images:
         primary_response_format = {"type": "json_object"}
     else:
