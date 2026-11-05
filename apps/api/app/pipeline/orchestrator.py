@@ -510,7 +510,7 @@ async def run_stage2_deep_analysis(
     if isinstance(raw_context, str):
         try:
             raw_context = json.loads(raw_context)
-        except Exception:
+        except (json.JSONDecodeError, TypeError, ValueError):
             raw_context = {}
     if not raw_context:
         ps_text = submission.get("ps_reference_text") or submission.get("ps_title") or ""
@@ -518,7 +518,7 @@ async def run_stage2_deep_analysis(
         try:
             context = await extract_submission_context(ps_text)
             await conn.execute("update submissions set submission_context = $2 where id = $1", submission_id, context.model_dump())
-        except Exception:
+        except Exception:  # noqa: BLE001
             from app.rubric.builder import _fallback_context
             context = _fallback_context()
     else:
