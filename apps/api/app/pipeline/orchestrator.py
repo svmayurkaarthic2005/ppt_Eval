@@ -506,10 +506,27 @@ async def run_stage2_deep_analysis(
     if template is None:
         raise ValueError(f"submission {submission_id} has no rubric template assigned")
 
-    if not submission["submission_context"]:
-        raise ValueError(f"submission {submission_id} has no submission_context to ground evaluation")
-    context = SubmissionContext(**submission["submission_context"])
-    rubric = build_rubric(template["id"], template["sections"], context)
+    raw_context = submission["submission_context"]
+    if isinstance(raw_context, str):
+        try:
+            raw_context = json.loads(raw_context)
+        except Exception:
+            raw_context = {}
+    if not raw_context:
+        ps_text = submission.get("ps_reference_text") or submission.get("ps_title") or ""
+        from app.rubric.builder import extract_submission_context
+        try:
+            context = await extract_submission_context(ps_text)
+            await conn.execute("update submissions set submission_context = $2 where id = $1", submission_id, context.model_dump())
+        except Exception:
+            from app.rubric.builder import _fallback_context
+            context = _fallback_context()
+    else:
+        context = SubmissionContext.model_validate(raw_context)
+    sections_raw = template["sections"]
+    if isinstance(sections_raw, str):
+        sections_raw = json.loads(sections_raw)
+    rubric = build_rubric(template["id"], sections_raw, context)
 
     slides = await conn.fetch(
         "select slide_number, raw_text, tables, image_storage_paths, classified_role "

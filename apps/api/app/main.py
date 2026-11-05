@@ -98,13 +98,15 @@ def _cors_headers(request: Request) -> dict[str, str]:
     _ALLOW_RE = re.compile(
         r"^https?://(localhost|127\.0\.0\.1|.*\.onrender\.com|.*\.vercel\.app)(:\d+)?$"
     )
-    allowed_origin = origin if origin and _ALLOW_RE.match(origin) else ""
-    headers: dict[str, str] = {}
-    if allowed_origin:
-        headers["Access-Control-Allow-Origin"] = allowed_origin
+    headers: dict[str, str] = {
+        "Access-Control-Allow-Methods": "*",
+        "Access-Control-Allow-Headers": "*",
+    }
+    if origin and _ALLOW_RE.match(origin):
+        headers["Access-Control-Allow-Origin"] = origin
         headers["Access-Control-Allow-Credentials"] = "true"
-        headers["Access-Control-Allow-Methods"] = "*"
-        headers["Access-Control-Allow-Headers"] = "*"
+    else:
+        headers["Access-Control-Allow-Origin"] = "*"
     return headers
 
 

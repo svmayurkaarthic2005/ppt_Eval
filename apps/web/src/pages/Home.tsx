@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import RankingTable from "../components/RankingTable";
@@ -546,17 +546,52 @@ function ProblemStatementGroupCard({
   );
 }
 
+const CACHE_KEYS = {
+  OVERALL: "hackeval_cache_overall",
+  GROUPS: "hackeval_cache_groups",
+  PS: "hackeval_cache_ps",
+  STATS: "hackeval_cache_stats",
+  PUBLISH: "hackeval_cache_publish",
+};
+
+function getLocalCache<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setLocalCache<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    // safe ignore for private mode or quota
+  }
+}
+
 export default function Home() {
   const { isAdmin } = useAdminAuth();
   const confirm = useConfirm();
   const [view, setView] = useState<"overall" | "by-problem-statement">("overall");
-  const [overall, setOverall] = useState<RankingRow[] | null>(null);
-  const [groups, setGroups] = useState<ProblemStatementGroup[] | null>(null);
-  const [allProblemStatements, setAllProblemStatements] = useState<ProblemStatement[] | null>(null);
-  const [totalSubmitted, setTotalSubmitted] = useState<number | null>(null);
-  const [totalScored, setTotalScored] = useState<number | null>(null);
-  const [totalProblemStatements, setTotalProblemStatements] = useState<number | null>(null);
+  const [overall, setOverall] = useState<RankingRow[] | null>(() => getLocalCache<RankingRow[]>(CACHE_KEYS.OVERALL));
+  const [groups, setGroups] = useState<ProblemStatementGroup[] | null>(() => getLocalCache<ProblemStatementGroup[]>(CACHE_KEYS.GROUPS));
+  const [allProblemStatements, setAllProblemStatements] = useState<ProblemStatement[] | null>(() => getLocalCache<ProblemStatement[]>(CACHE_KEYS.PS));
+  const [totalSubmitted, setTotalSubmitted] = useState<number | null>(() => {
+    const cached = getLocalCache<{ total: number; scored: number }>(CACHE_KEYS.STATS);
+    return cached ? cached.total : null;
+  });
+  const [totalScored, setTotalScored] = useState<number | null>(() => {
+    const cached = getLocalCache<{ total: number; scored: number }>(CACHE_KEYS.STATS);
+    return cached ? cached.scored : null;
+  });
+  const [totalProblemStatements, setTotalProblemStatements] = useState<number | null>(() => {
+    const cachedPs = getLocalCache<ProblemStatement[]>(CACHE_KEYS.PS);
+    return cachedPs ? cachedPs.length : null;
+  });
   const [totalAwaitingStage2, setTotalAwaitingStage2] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [stage2Message, setStage2Message] = useState<string | null>(null);
@@ -565,9 +600,11 @@ export default function Home() {
   const [bulkReEvaluating, setBulkReEvaluating] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
-  const [publishStatus, setPublishStatus] = useState<LeaderboardPublishStatus>({
-    is_published: false,
-    published_at: null,
+  const [publishStatus, setPublishStatus] = useState<LeaderboardPublishStatus>(() => {
+    return getLocalCache<LeaderboardPublishStatus>(CACHE_KEYS.PUBLISH) ?? {
+      is_published: false,
+      published_at: null,
+    };
   });
   const [togglingPublish, setTogglingPublish] = useState(false);
   const [reEvaluatingFailed, setReEvaluatingFailed] = useState(false);
@@ -590,7 +627,10 @@ export default function Home() {
 
   function loadPublishStatus(): void {
     getLeaderboardPublishStatus()
-      .then(setPublishStatus)
+      .then((status) => {
+        setPublishStatus(status);
+        setLocalCache(CACHE_KEYS.PUBLISH, status);
+      })
       .catch(() => {});
   }
 
@@ -654,6 +694,7 @@ export default function Home() {
     return getSubmissionStats().then((stats) => {
       setTotalSubmitted(stats.total);
       setTotalScored(stats.scored);
+      setLocalCache(CACHE_KEYS.STATS, { total: stats.total, scored: stats.scored });
       return stats.in_progress;
     });
   }
@@ -675,9 +716,11 @@ export default function Home() {
   }
 
   function loadRankings() {
+    setIsSyncing(true);
     getOverallRanking()
       .then((data) => {
         setOverall(data);
+        setLocalCache(CACHE_KEYS.OVERALL, data);
         setError(null);
       })
       .catch((err) => {
@@ -689,15 +732,17 @@ export default function Home() {
           }
           return curr;
         });
-      });
+      })
+      .finally(() => setIsSyncing(false));
 
     getRankingByProblemStatement()
       .then((data) => {
         setGroups(data);
+        setLocalCache(CACHE_KEYS.GROUPS, data);
       })
       .catch((err) => {
         setGroups((curr) => {
-          if (curr === null) {
+          if (curr === null && overall === null) {
             setError(err instanceof ApiError ? err.message : "Could not load rankings.");
           }
           return curr;
@@ -710,61 +755,70 @@ export default function Home() {
       .then((rows) => {
         setAllProblemStatements(rows);
         setTotalProblemStatements(rows.length);
+        setLocalCache(CACHE_KEYS.PS, rows);
       })
       .catch(() => {});
   }
 
+  const isPollingRef = useRef(false);
+
+  // Initial fetch on mount
   useEffect(() => {
     loadPublishStatus();
     loadRankings();
     loadStats();
     loadAdminDashboardStats();
     loadProblemStatementsData();
-
-    const interval = setInterval(() => {
-      loadPublishStatus();
-      loadAdminDashboardStats();
-      loadStats().then((inProgress) => {
-        if (inProgress) {
-          loadRankings();
-          loadProblemStatementsData();
-        }
-      });
-    }, 4000);
-    return () => clearInterval(interval);
   }, [isAdmin]);
 
-  // Active tracking for currently evaluating submission IDs
+  // Polite, unified background poll with non-overlapping concurrency lock
   useEffect(() => {
-    if (evaluatingIds.size === 0) return;
+    const hasActiveEvals = evaluatingIds.size > 0;
+    // 8 seconds when evaluations are actively running; gentle 30 seconds otherwise
+    const pollIntervalMs = hasActiveEvals ? 8000 : 30000;
 
     const interval = setInterval(async () => {
+      if (isPollingRef.current) return;
+      isPollingRef.current = true;
+
       try {
-        const fresh = await getOverallRanking();
-        if (fresh) {
-          setOverall(fresh);
-          setEvaluatingIds((prev) => {
-            const next = new Set(prev);
-            for (const id of prev) {
-              const row = fresh.find((r) => r.submission_id === id);
-              if (row && row.total > 0) {
-                next.delete(id);
-                showToast(
-                  "success",
-                  "Scoring Complete!",
-                  `"${row.team_name}" finished scoring with total: ${Number(row.total.toFixed(2))}/${row.max_total}`,
-                );
-              }
+        const inProgress = await loadStats();
+        if (hasActiveEvals || inProgress) {
+          const fresh = await getOverallRanking();
+          if (fresh) {
+            setOverall(fresh);
+            setLocalCache(CACHE_KEYS.OVERALL, fresh);
+            if (hasActiveEvals) {
+              setEvaluatingIds((prev) => {
+                const next = new Set(prev);
+                for (const id of prev) {
+                  const row = fresh.find((r) => r.submission_id === id);
+                  if (row && row.total > 0) {
+                    next.delete(id);
+                    showToast(
+                      "success",
+                      "Scoring Complete!",
+                      `"${row.team_name}" finished scoring with total: ${Number(row.total.toFixed(2))}/${row.max_total}`,
+                    );
+                  }
+                }
+                return next;
+              });
             }
-            return next;
-          });
+          }
+          getRankingByProblemStatement()
+            .then((data) => {
+              setGroups(data);
+              setLocalCache(CACHE_KEYS.GROUPS, data);
+            })
+            .catch(() => {});
         }
-        getRankingByProblemStatement().then(setGroups).catch(() => {});
-        loadStats();
-      } catch (e) {
-        console.error("Evaluation poll failed:", e);
+      } catch {
+        // Silent catch for background poll
+      } finally {
+        isPollingRef.current = false;
       }
-    }, 3000);
+    }, pollIntervalMs);
 
     return () => clearInterval(interval);
   }, [evaluatingIds, showToast]);
@@ -937,18 +991,31 @@ export default function Home() {
     return allProblemStatements.filter((ps) => !activeIds.has(ps.id));
   }, [allProblemStatements, groups]);
 
+  useEffect(() => {
+    if (error && overall === null) {
+      const timer = setTimeout(() => {
+        setError(null);
+        loadRankings();
+        loadStats();
+        loadPublishStatus();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, overall]);
+
   if (error && overall === null) {
     return (
       <main className="flex min-h-[calc(100vh-57px)] items-center justify-center p-6">
         <div className="stitch-card max-w-md rounded-2xl p-8 text-center shadow-lg border border-slate-200">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
-            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+            <svg className="h-6 w-6 animate-spin text-indigo-600" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
           </div>
-          <h2 className="text-base font-bold text-slate-900 mb-1">Connection Issue</h2>
+          <h2 className="text-base font-bold text-slate-900 mb-1">Connecting to HackEval Engine</h2>
           <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-            {error}. The server may be warming up from standby. Click below to reconnect.
+            The jury scoring engine on Render is waking up from standby (free tier cold-start). Auto-connecting in background...
           </p>
           <button
             type="button"
@@ -965,7 +1032,7 @@ export default function Home() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="h-3.5 w-3.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
-            Retry Connection
+            Reconnect Now
           </button>
         </div>
       </main>
@@ -985,6 +1052,11 @@ export default function Home() {
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 animate-pulse"></span>
               Live Standings
             </span>
+            {isSyncing && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 animate-pulse">
+                Syncing...
+              </span>
+            )}
           </div>
           <h1 className="mt-2 text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
             Hackathon Leaderboard

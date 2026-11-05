@@ -727,7 +727,7 @@ async def _call_groq(
         fallback_payload = {
             "model": FALLBACK_TEXT_MODEL,
             "temperature": 0,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "messages": _build_text_fallback_messages(),
             "response_format": {
                 "type": "json_schema",
@@ -741,7 +741,7 @@ async def _call_groq(
     payload = {
         "model": GROQ_MODEL,
         "temperature": 0,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "messages": messages,
         "response_format": {
             "type": "json_schema",
@@ -778,7 +778,7 @@ async def _call_groq(
         fallback_payload = {
             "model": FALLBACK_TEXT_MODEL,
             "temperature": 0,
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "messages": _build_text_fallback_messages(),
             "response_format": {
                 "type": "json_schema",
@@ -992,7 +992,31 @@ async def _evaluate_section_batch(
             await _log_evidence_citations(conn, submission_id, c.criterion_key, results[c.criterion_key], raw)
         return results, raw_responses
 
-    return {}, raw_responses
+    # Fallback: if section-batch call or schema validation failed for all attempts,
+    # evaluate criteria individually so a single large prompt doesn't fail the entire section.
+    logger.info("Section %s batch scoring failed; falling back to per-criterion evaluation", criteria[0].section_key)
+    fallback_results: dict[str, CriterionScoreResult] = {}
+    for c in criteria:
+        try:
+            status, res, single_raw = await _evaluate_batch(
+                conn,
+                submission_id,
+                c,
+                evaluation_context,
+                text_context,
+                image_batch=[],
+                slides_without_image_this_round=[],
+                rate_limiter=rate_limiter,
+                academic_context=academic_context,
+                cost_context=cost_context,
+            )
+            raw_responses.extend(single_raw)
+            if status == "scored" and res is not None:
+                fallback_results[c.criterion_key] = res
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Single-criterion fallback failed for %s: %s", c.criterion_key, exc)
+
+    return fallback_results, raw_responses
 
 
 async def evaluate_section(

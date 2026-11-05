@@ -35,29 +35,58 @@ async function parseOrThrow<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+const inFlightRequests = new Map<string, Promise<Response>>();
+
 export async function fetchWithRetry(
   input: RequestInfo | URL,
   init?: RequestInit,
   retries = 2,
-  delayMs = 1200,
+  delayMs = 1500,
 ): Promise<Response> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const res = await fetch(input, init);
-      if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
-        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
-        continue;
-      }
-      return res;
-    } catch (err) {
-      if (attempt < retries) {
-        await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
-        continue;
-      }
-      throw err;
+  const method = (init?.method || "GET").toUpperCase();
+  const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url;
+
+  // Deduplicate concurrent GET requests to avoid hammering the backend / triggering 429s
+  if (method === "GET") {
+    const existing = inFlightRequests.get(url);
+    if (existing) {
+      return existing.then((r) => r.clone());
     }
   }
-  return fetch(input, init);
+
+  const requestPromise = (async () => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(input, init);
+        // Never retry client-side errors or 429 (Too Many Requests) -- fail immediately to respect rate limits
+        if (res.status === 429 || (res.status >= 400 && res.status < 500)) {
+          return res;
+        }
+        // Only retry cold-start server errors (502, 503, 504)
+        if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < retries) {
+          await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+          continue;
+        }
+        return res;
+      } catch (err) {
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
+    return fetch(input, init);
+  })();
+
+  if (method === "GET") {
+    inFlightRequests.set(url, requestPromise);
+    requestPromise.finally(() => {
+      inFlightRequests.delete(url);
+    });
+  }
+
+  return requestPromise;
 }
 
 export async function previewProblemStatement(
