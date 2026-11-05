@@ -126,10 +126,19 @@ async def _convert_pptx_to_pdf_soffice(
         pptx_path = tmp_path / "deck.pptx"
         pptx_path.write_bytes(pptx_bytes)
 
+        # Isolated user profile directory avoids concurrent IPC and profile lock conflicts
+        profile_dir = tmp_path / "lo_profile"
+        profile_dir.mkdir(exist_ok=True)
+        profile_uri = profile_dir.as_uri()
+
         argv = [
             soffice_path,
+            f"-env:UserInstallation={profile_uri}",
             *SOFFICE_ARGV[1:],
             "--headless",
+            "--invisible",
+            "--nologo",
+            "--nofirststartwizard",
             "--convert-to",
             "pdf",
             "--outdir",
@@ -139,6 +148,35 @@ async def _convert_pptx_to_pdf_soffice(
         await run_with_timeout(argv, timeout)
 
         pdf_path = tmp_path / "deck.pdf"
+        if not pdf_path.exists():
+            pdfs = list(tmp_path.glob("*.pdf")) + list(tmp_path.glob("*.PDF"))
+            if pdfs:
+                pdf_path = pdfs[0]
+
+        if not pdf_path.exists():
+            # Retry with explicit Impress presentation filter
+            argv_filter = [
+                soffice_path,
+                f"-env:UserInstallation={profile_uri}",
+                *SOFFICE_ARGV[1:],
+                "--headless",
+                "--invisible",
+                "--nologo",
+                "--nofirststartwizard",
+                "--convert-to",
+                "pdf:impress_pdf_Export",
+                "--outdir",
+                str(tmp_path),
+                str(pptx_path),
+            ]
+            try:
+                await run_with_timeout(argv_filter, timeout)
+                pdfs = list(tmp_path.glob("*.pdf")) + list(tmp_path.glob("*.PDF"))
+                if pdfs:
+                    pdf_path = pdfs[0]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Impress export filter fallback failed: %s", exc)
+
         if not pdf_path.exists():
             raise SubprocessFailedError(0, b"soffice did not produce a PDF output file")
         return pdf_path.read_bytes()
