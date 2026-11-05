@@ -393,6 +393,65 @@ async def render_submission_slides(conn: asyncpg.Connection, submission_id: UUID
             slide_number,
         )
 
+    # Phase 4 OCR recovery: For any slide that ended up with empty or minimal raw_text,
+    # recover text from the rendered slide image so subsequent rubric, cost, and scoring
+    # steps have real textual evidence.
+    empty_text_slides = await conn.fetch(
+        """
+        select slide_number, title, raw_text, image_storage_paths
+        from slides
+        where submission_id = $1 and length(coalesce(raw_text, '')) < 20
+        order by slide_number
+        """,
+        submission_id,
+    )
+    if empty_text_slides:
+        from app.extraction.ocr import extract_text_from_image_bytes
+        from app.extraction.slide_roles import classify_slide_role
+
+        for s_row in empty_text_slides:
+            s_num = s_row["slide_number"]
+            img_bytes = None
+            if s_num in rendered_paths:
+                try:
+                    img_bytes = storage.download(rendered_paths[s_num])
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Failed downloading rendered slide %s for OCR: %s", rendered_paths[s_num], exc)
+            elif s_row["image_storage_paths"]:
+                try:
+                    img_bytes = storage.download(s_row["image_storage_paths"][0])
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Failed downloading slide image for OCR: %s", exc)
+
+            if img_bytes:
+                ocr_text = extract_text_from_image_bytes(img_bytes)
+                if ocr_text and len(ocr_text.strip()) >= 15:
+                    new_title = s_row["title"]
+                    if (
+                        new_title in (f"Slide {s_num}", "Title Slide", "Title Page", f"Page {s_num}", "")
+                        or len(new_title) < 4
+                    ):
+                        for line in ocr_text.splitlines():
+                            cleaned = line.strip().lstrip("•-*# ").strip()
+                            if len(cleaned) >= 3:
+                                new_title = cleaned[:120]
+                                break
+                    new_role = await classify_slide_role(new_title, ocr_text)
+                    await conn.execute(
+                        """
+                        update slides
+                        set raw_text = $3,
+                            title = $4,
+                            classified_role = $5
+                        where submission_id = $1 and slide_number = $2
+                        """,
+                        submission_id,
+                        s_num,
+                        ocr_text,
+                        new_title,
+                        new_role.value,
+                    )
+
     if rendered_paths:
         await conn.execute(
             """

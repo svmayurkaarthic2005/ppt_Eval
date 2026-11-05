@@ -112,7 +112,10 @@ def _extract_shape(shape) -> tuple[dict, str]:
                 address = run.hyperlink.address
                 if address:
                     hyperlinks.append({"text": run.text, "address": address})
-            paragraphs.append("".join(run_texts))
+            p_text = "".join(run_texts)
+            if not p_text and paragraph.text:
+                p_text = paragraph.text
+            paragraphs.append(p_text)
 
     has_chart = bool(getattr(shape, "has_chart", False))
     shape_dict = {
@@ -126,7 +129,7 @@ def _extract_shape(shape) -> tuple[dict, str]:
         "has_chart": has_chart,
         "chart_data": _extract_chart_data(shape.chart) if has_chart else None,
         "hyperlinks": hyperlinks,
-        "is_picture": shape.shape_type == MSO_SHAPE_TYPE.PICTURE,
+        "is_picture": shape.shape_type == MSO_SHAPE_TYPE.PICTURE or hasattr(shape, "image"),
     }
     return shape_dict, "\n".join(paragraphs)
 
@@ -200,7 +203,15 @@ def parse_pptx(content: bytes) -> list[ParsedSlide]:
                 continue  # kept separate in `title`, not duplicated into raw_text
 
             if getattr(shape, "has_table", False):
-                tables.append(_extract_table(shape))
+                extracted_table = _extract_table(shape)
+                tables.append(extracted_table)
+                table_lines = [
+                    " | ".join(cell["text"].strip() for cell in row if cell["text"].strip())
+                    for row in extracted_table
+                ]
+                table_text = "\n".join(line for line in table_lines if line)
+                if table_text:
+                    body_text_parts.append(table_text)
                 continue
 
             shape_dict, text = _extract_shape(shape)
@@ -210,11 +221,34 @@ def parse_pptx(content: bytes) -> list[ParsedSlide]:
             if shape_dict["is_picture"] and not shape_dict["has_chart"]:
                 needs_visual_rendering = True
 
+        slide_raw_text = "\n".join(body_text_parts).strip()
+        # If slide text is still empty or minimal, attempt OCR from embedded picture shapes
+        if len(slide_raw_text) < 20:
+            from app.extraction.ocr import extract_text_from_image_bytes
+
+            for shape in _iter_shapes(slide.shapes):
+                if hasattr(shape, "image"):
+                    try:
+                        img_bytes = shape.image.blob
+                        ocr_txt = extract_text_from_image_bytes(img_bytes)
+                        if ocr_txt and len(ocr_txt) > len(slide_raw_text):
+                            slide_raw_text = ocr_txt
+                            needs_visual_rendering = True
+                            if title in (f"Slide {slide_number}", "Title Slide", "") or len(title) < 4:
+                                for line in ocr_txt.splitlines():
+                                    cleaned = line.strip().lstrip("•-*# ").strip()
+                                    if len(cleaned) >= 3:
+                                        title = cleaned[:120]
+                                        break
+                            break
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Failed OCR for slide %d: %s", slide_number, exc)
+
         parsed_slides.append(
             ParsedSlide(
                 slide_number=slide_number,
                 title=title,
-                raw_text="\n".join(body_text_parts),
+                raw_text=slide_raw_text,
                 shapes=shape_dicts,
                 tables=tables,
                 needs_visual_rendering=needs_visual_rendering,
@@ -259,12 +293,14 @@ def parse_pdf(content: bytes) -> list[ParsedSlide]:
         pdf.close()
         raise PdfCorruptError("PDF contains no pages.")
 
+    from app.extraction.ocr import extract_text_from_pdf_page
+
     parsed_slides: list[ParsedSlide] = []
     try:
         for page_index in range(pdf.page_count):
             page_number = page_index + 1
             page = pdf[page_index]
-            raw_text = page.get_text()
+            raw_text = extract_text_from_pdf_page(page)
             title = _derive_pdf_page_title(raw_text, page_number)
             parsed_slides.append(
                 ParsedSlide(

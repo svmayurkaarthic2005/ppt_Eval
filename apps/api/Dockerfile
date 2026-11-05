@@ -12,6 +12,8 @@ RUN apt-get update \
         libreoffice-calc \
         fonts-liberation \
         fonts-dejavu-core \
+        tesseract-ocr \
+        tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 COPY apps/api/pyproject.toml ./pyproject.toml

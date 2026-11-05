@@ -16,12 +16,12 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import asyncpg
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.llm.key_pool import GroqKeyPool, get_key_pool
 from app.llm.prompt_safety import INJECTION_DEFENSE_CLAUSE, wrap_untrusted
@@ -121,13 +121,31 @@ class VisualEvidence(BaseModel):
     section's scoring call -- the fix for re-sending the same images to
     every section independently."""
 
-    observations: str
-    visual_relationships: str
-    chart_interpretations: str
-    uncertainties: list[str]
-    contradiction_candidates: list[str]
-    slides_covered: list[int]
-    coverage: Literal["full", "partial", "none"]
+    observations: str = ""
+    visual_relationships: str = ""
+    chart_interpretations: str = ""
+    uncertainties: list[str] = Field(default_factory=list)
+    contradiction_candidates: list[str] = Field(default_factory=list)
+    slides_covered: list[int] = Field(default_factory=list)
+    coverage: Literal["full", "partial", "none"] = "partial"
+
+    @field_validator("observations", "visual_relationships", "chart_interpretations", mode="before")
+    @classmethod
+    def _coerce_str(cls, v: Any) -> str:
+        if isinstance(v, list):
+            return "\n".join(str(item) for item in v if item)
+        if isinstance(v, dict):
+            return json.dumps(v)
+        return str(v or "")
+
+    @field_validator("uncertainties", "contradiction_candidates", mode="before")
+    @classmethod
+    def _coerce_list(cls, v: Any) -> list[str]:
+        if isinstance(v, list):
+            return [str(item) for item in v if item]
+        if isinstance(v, str) and v.strip():
+            return [v.strip()]
+        return []
 
 
 @dataclass
@@ -390,7 +408,11 @@ def _build_visual_evidence_messages(
                 "For EACH slide image: first transcribe ALL readable text you see (headings, bullets, "
                 "table rows, chart labels, captions, any embedded text). Then describe diagrams, "
                 "workflows, charts, and tables. List anything ambiguous or illegible, "
-                "and anything that appears to contradict the deck's own text claims elsewhere."
+                "and anything that appears to contradict the deck's own text claims elsewhere.\n\n"
+                "Respond in valid JSON format matching this schema: "
+                '{"observations": "<detailed text observations>", "visual_relationships": "<relationships between components/slides>", '
+                '"chart_interpretations": "<table and chart details>", "uncertainties": ["<uncertainty>"], '
+                '"contradiction_candidates": ["<contradiction>"]}.'
             ),
         }
     ]
@@ -509,12 +531,14 @@ async def extract_visual_evidence(
         try:
             content = raw["choices"][0]["message"]["content"]
             parsed = json.loads(content)
+            if not isinstance(parsed, dict):
+                raise TypeError("Expected a JSON object from visual evidence model")
             return VisualEvidence(
-                observations=parsed["observations"],
-                visual_relationships=parsed["visual_relationships"],
-                chart_interpretations=parsed["chart_interpretations"],
-                uncertainties=parsed["uncertainties"],
-                contradiction_candidates=parsed["contradiction_candidates"],
+                observations=parsed.get("observations") or "",
+                visual_relationships=parsed.get("visual_relationships") or "",
+                chart_interpretations=parsed.get("chart_interpretations") or "",
+                uncertainties=parsed.get("uncertainties") or [],
+                contradiction_candidates=parsed.get("contradiction_candidates") or [],
                 slides_covered=slides_covered,
                 coverage=coverage,
             )
@@ -738,15 +762,26 @@ async def _call_groq(
             response = await post_with_backoff(client, fallback_payload, pool)
         return response.json()
 
+    has_images = any(
+        isinstance(msg.get("content"), list)
+        and any(isinstance(part, dict) and part.get("type") == "image_url" for part in msg["content"])
+        for msg in messages
+    )
+
+    if has_images:
+        primary_response_format = {"type": "json_object"}
+    else:
+        primary_response_format = {
+            "type": "json_schema",
+            "json_schema": {"name": "criterion_score", "schema": json_schema, "strict": True},
+        }
+
     payload = {
         "model": GROQ_MODEL,
         "temperature": 0,
         "max_tokens": 4096,
         "messages": messages,
-        "response_format": {
-            "type": "json_schema",
-            "json_schema": {"name": "criterion_score", "schema": json_schema, "strict": True},
-        },
+        "response_format": primary_response_format,
     }
 
     try:
