@@ -26,6 +26,7 @@ async def test_get_health_ok_when_both_reachable():
     assert result.status == "ok"
     assert result.supabase == "reachable"
     assert result.groq == "reachable"
+    assert result.database == "reachable"
 
 
 @pytest.mark.asyncio
@@ -39,6 +40,7 @@ async def test_get_health_degraded_when_supabase_unreachable():
     assert result.status == "degraded"
     assert result.supabase == "unreachable"
     assert result.groq == "unreachable"
+    assert result.database == "reachable"
 
 
 @pytest.mark.asyncio
@@ -53,6 +55,7 @@ async def test_get_health_treats_server_error_as_unreachable():
     assert result.status == "degraded"
     assert result.supabase == "unreachable"
     assert result.groq == "unreachable"
+    assert result.database == "reachable"
 
 
 @pytest.mark.asyncio
@@ -63,3 +66,21 @@ async def test_get_health_unreachable_when_settings_missing():
     assert result.status == "degraded"
     assert result.supabase == "unreachable"
     assert result.groq == "unreachable"
+    assert result.database == "reachable"
+
+
+@pytest.mark.asyncio
+async def test_get_health_degraded_when_db_fails():
+    mock_pool = AsyncMock()
+    mock_pool.acquire.side_effect = RuntimeError("db down")
+    with (
+        patch("app.health.get_settings", return_value=_settings()),
+        patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+    ):
+        mock_get.return_value = httpx.Response(200, request=httpx.Request("GET", "https://x"))
+        result = await get_health(pool=mock_pool)
+
+    assert result.status == "degraded"
+    assert result.supabase == "reachable"
+    assert result.groq == "reachable"
+    assert result.database == "unreachable"

@@ -58,10 +58,14 @@ async def create_pool() -> asyncpg.Pool | None:
         logger.warning("DATABASE_URL not set; job queue worker disabled")
         return None
 
-    urls_to_try = [database_url]
+    urls_to_try: list[str] = []
     pooler_fallback = _resolve_supabase_pooler_url(database_url)
     if pooler_fallback and pooler_fallback != database_url:
+        # On modern cloud container environments (like Render), direct Supabase db.<ref>.supabase.co
+        # resolves to IPv6 which is unreachable ([Errno 101]). The pooler URL has full IPv4 support.
+        # Put pooler_fallback first so connections succeed immediately on attempt 1 without retries.
         urls_to_try.append(pooler_fallback)
+    urls_to_try.append(database_url)
 
     last_error: Exception | None = None
     for current_url in urls_to_try:

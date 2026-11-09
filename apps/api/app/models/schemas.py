@@ -225,3 +225,4 @@ class HealthStatus(BaseModel):
     status: Literal["ok", "degraded"]
     supabase: Literal["reachable", "unreachable"]
     groq: Literal["reachable", "unreachable"]
+    database: Literal["reachable", "unreachable"] = "reachable"

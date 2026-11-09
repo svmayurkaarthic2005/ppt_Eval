@@ -154,5 +154,6 @@ app.include_router(problem_statements.router)
 
 
 @app.get("/health", response_model=HealthStatus)
-async def health() -> HealthStatus:
-    return await get_health()
+async def health(request: Request) -> HealthStatus:
+    pool = getattr(request.app.state, "db_pool", None)
+    return await get_health(pool=pool)
