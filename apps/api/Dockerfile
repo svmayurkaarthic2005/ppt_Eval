@@ -7,7 +7,10 @@ WORKDIR /app
 # not just in the separate `libreoffice` compose service.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        libreoffice-core \
+        libreoffice-writer \
         libreoffice-impress \
+        libreoffice-common \
         libreoffice-draw \
         libreoffice-calc \
         fonts-liberation \

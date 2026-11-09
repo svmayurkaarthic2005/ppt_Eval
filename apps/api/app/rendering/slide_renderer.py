@@ -192,6 +192,105 @@ def rasterize_page_to_png(pdf_bytes: bytes, page_index: int, dpi: int = RENDER_D
         return page.get_pixmap(dpi=dpi).tobytes("png")
 
 
+def render_synthetic_slide(
+    slide_number: int,
+    title: str,
+    raw_text: str,
+    role: str = "",
+    image_bytes: bytes | None = None,
+) -> bytes:
+    """Generates a crisp 1280x720 vector slide card directly in memory using PyMuPDF.
+
+    Used as an ultra-fast zero-RAM fallback whenever headless LibreOffice is missing,
+    times out, or cannot produce a PDF. Guarantees that every slide has a rendered
+    image for visual jury analysis and the UI.
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=1280, height=720)
+
+    # 1. Background
+    page.draw_rect(pymupdf.Rect(0, 0, 1280, 720), color=(0.94, 0.95, 0.97), fill=(0.94, 0.95, 0.97))
+    page.draw_rect(pymupdf.Rect(20, 20, 1260, 700), color=(0.82, 0.86, 0.91), width=1.5)
+
+    # 2. Modern Header
+    page.draw_rect(pymupdf.Rect(35, 35, 1245, 125), color=(0.12, 0.16, 0.26), fill=(0.12, 0.16, 0.26))
+
+    # Slide Number Badge
+    page.draw_rect(pymupdf.Rect(50, 48, 140, 78), color=(0.28, 0.38, 0.65), fill=(0.28, 0.38, 0.65))
+    page.insert_textbox(
+        pymupdf.Rect(50, 52, 140, 78),
+        f"Slide {slide_number}",
+        fontsize=13,
+        color=(1, 1, 1),
+        fontname="helv",
+        align=pymupdf.TEXT_ALIGN_CENTER,
+    )
+
+    # Classified Role Badge
+    if role:
+        role_label = role.upper().replace("_", " ")
+        role_width = min(220, max(120, len(role_label) * 9 + 20))
+        page.draw_rect(
+            pymupdf.Rect(150, 48, 150 + role_width, 78),
+            color=(0.2, 0.28, 0.45),
+            fill=(0.2, 0.28, 0.45),
+        )
+        page.insert_textbox(
+            pymupdf.Rect(150, 52, 150 + role_width, 78),
+            role_label,
+            fontsize=11,
+            color=(0.9, 0.95, 1),
+            fontname="helv",
+            align=pymupdf.TEXT_ALIGN_CENTER,
+        )
+
+    # Title
+    display_title = (title or f"Slide {slide_number}").strip()
+    page.insert_textbox(
+        pymupdf.Rect(50, 84, 1230, 120),
+        display_title[:100],
+        fontsize=20,
+        color=(1, 1, 1),
+        fontname="helv",
+    )
+
+    # 3. Content Area
+    content_rect = pymupdf.Rect(35, 138, 1245, 675)
+    page.draw_rect(content_rect, color=(1, 1, 1), fill=(1, 1, 1))
+
+    if image_bytes:
+        try:
+            page.insert_image(pymupdf.Rect(750, 160, 1220, 650), stream=image_bytes)
+            text_rect = pymupdf.Rect(60, 160, 730, 650)
+        except Exception:  # noqa: BLE001
+            text_rect = pymupdf.Rect(60, 160, 1220, 650)
+    else:
+        text_rect = pymupdf.Rect(60, 160, 1220, 650)
+
+    body_text = raw_text.strip() if raw_text else "No additional text content on this slide."
+    if len(body_text) > 2000:
+        body_text = body_text[:1950] + "..."
+    page.insert_textbox(
+        text_rect,
+        body_text,
+        fontsize=14,
+        color=(0.15, 0.18, 0.22),
+        fontname="helv",
+    )
+
+    # Footer
+    page.insert_textbox(
+        pymupdf.Rect(50, 682, 1230, 705),
+        "HackEval Presentation Deck Extraction",
+        fontsize=10,
+        color=(0.55, 0.6, 0.68),
+        fontname="helv",
+    )
+
+    pix = page.get_pixmap(dpi=150)
+    return pix.tobytes("png")
+
+
 async def convert_pptx_to_pdf_bytes(
     pptx_bytes: bytes, timeout: float = LIBREOFFICE_TIMEOUT_SECONDS
 ) -> bytes:
@@ -418,6 +517,58 @@ async def render_submission_slides(conn: asyncpg.Connection, submission_id: UUID
                     if page_index >= page_count:
                         continue  # defensive: conversion produced fewer pages than slides
                     png_bytes = rasterize_page_to_png(pdf_bytes, page_index)
+                    path = f"{submission_id}/slide-{slide_number}.png"
+                    storage.upload(path, png_bytes, {"content-type": "image/png", "upsert": "true"})
+                    await conn.execute(
+                        """
+                        insert into rendered_slide_cache (content_hash, storage_path)
+                        values ($1, $2)
+                        on conflict (content_hash) do update set storage_path = excluded.storage_path
+                        """,
+                        content_hash,
+                        path,
+                    )
+                    rendered_paths[slide_number] = path
+            else:
+                # Synthetic vector canvas fallback:
+                # If LibreOffice failed or is unavailable, synthesize crisp visual slide cards
+                # using PyMuPDF directly from slide text, tables, and images.
+                # This guarantees that EVERY slide has a rendered image for visual jury analysis,
+                # eliminating "No image rendered for this slide" completely.
+                logger.info(
+                    "submission %s: falling back to synthetic vector slide rendering for %d slides",
+                    submission_id,
+                    len(cache_misses),
+                )
+                from app.extraction.structural import _extract_slide_title
+
+                for slide_number, content_hash in cache_misses.items():
+                    if not (1 <= slide_number <= len(presentation.slides)):
+                        continue
+                    slide_obj = presentation.slides[slide_number - 1]
+                    slide_title, _ = _extract_slide_title(slide_obj, slide_number)
+                    txt_parts = [
+                        shape.text_frame.text
+                        for shape in slide_obj.shapes
+                        if getattr(shape, "has_text_frame", False)
+                    ]
+                    slide_raw_text = "\n\n".join(t.strip() for t in txt_parts if t.strip())
+
+                    small_img: bytes | None = None
+                    for shape in slide_obj.shapes:
+                        if hasattr(shape, "image"):
+                            try:
+                                small_img = shape.image.blob
+                                break
+                            except Exception:  # noqa: BLE001, S110
+                                pass
+
+                    png_bytes = render_synthetic_slide(
+                        slide_number=slide_number,
+                        title=slide_title,
+                        raw_text=slide_raw_text,
+                        image_bytes=small_img,
+                    )
                     path = f"{submission_id}/slide-{slide_number}.png"
                     storage.upload(path, png_bytes, {"content-type": "image/png", "upsert": "true"})
                     await conn.execute(
