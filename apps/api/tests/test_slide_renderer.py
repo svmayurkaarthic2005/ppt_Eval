@@ -1,9 +1,14 @@
 import io
 
 import pymupdf
+import pytest
 from pptx import Presentation
 
-from app.rendering.slide_renderer import hash_slide_xml, rasterize_page_to_png
+from app.rendering.slide_renderer import (
+    hash_slide_xml,
+    rasterize_page_to_png,
+    render_synthetic_slide,
+)
 
 
 def _one_slide_deck(title: str) -> bytes:
@@ -65,16 +70,47 @@ def test_rasterize_multiple_pages_of_pdf():
     assert png_1.startswith(b"\x89PNG\r\n\x1a\n")
 
 
+def test_render_synthetic_slide_basic():
+    png_bytes = render_synthetic_slide(
+        slide_number=1,
+        title="Title Slide",
+        raw_text="Hello world body text",
+        role="title",
+    )
+    assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    pixmap = pymupdf.Pixmap(png_bytes)
+    assert pixmap.width > 0
+    assert pixmap.height > 0
+
+
+def test_render_synthetic_slide_with_tables():
+    table_data = [
+        ["Col A", "Col B", "Col C"],
+        ["Val 1", "Val 2", "Val 3"],
+        ["Val 4", "Val 5", "Val 6"],
+    ]
+    png_bytes = render_synthetic_slide(
+        slide_number=2,
+        title="Slide with Table",
+        raw_text="Bullets below table",
+        tables=[table_data],
+    )
+    assert png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    pixmap = pymupdf.Pixmap(png_bytes)
+    assert pixmap.width > 0
+    assert pixmap.height > 0
+
+
 def test_resolve_soffice_path_returns_none_when_unavailable(monkeypatch):
     from app.rendering.slide_renderer import _resolve_soffice_path
+
     monkeypatch.setattr("shutil.which", lambda _: None)
     monkeypatch.setattr("pathlib.Path.is_file", lambda _: False)
     assert _resolve_soffice_path() is None
 
 
+@pytest.mark.asyncio
 async def test_convert_pptx_to_pdf_raises_unavailable_when_neither_available(monkeypatch):
-    import pytest
-
     from app.rendering.slide_renderer import convert_pptx_to_pdf_bytes
     from app.rendering.subprocess_runner import SubprocessUnavailableError
 

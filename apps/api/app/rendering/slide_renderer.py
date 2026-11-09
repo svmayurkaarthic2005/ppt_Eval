@@ -121,6 +121,18 @@ def _convert_pptx_to_pdf_powerpoint(pptx_bytes: bytes) -> bytes:
 async def _convert_pptx_to_pdf_soffice(
     soffice_path: str, pptx_bytes: bytes, timeout: float
 ) -> bytes:
+    # Pre-clean PPTX: PPTX files saved by Microsoft PowerPoint often contain Protected View metadata,
+    # security headers, or proprietary OpenXML wrappers that cause headless LibreOffice CLI to reject
+    # the file with "Error: source file could not be loaded".
+    # Normalizing via python-pptx round-trip cleans the OpenXML package and removes locks.
+    try:
+        prs = Presentation(io.BytesIO(pptx_bytes))
+        clean_buf = io.BytesIO()
+        prs.save(clean_buf)
+        pptx_bytes = clean_buf.getvalue()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("PPTX normalization skipped: %s", exc)
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         pptx_path = tmp_path / "deck.pptx"
@@ -198,12 +210,13 @@ def render_synthetic_slide(
     raw_text: str,
     role: str = "",
     image_bytes: bytes | None = None,
+    tables: list[list[list[str]]] | None = None,
 ) -> bytes:
     """Generates a crisp 1280x720 vector slide card directly in memory using PyMuPDF.
 
     Used as an ultra-fast zero-RAM fallback whenever headless LibreOffice is missing,
     times out, or cannot produce a PDF. Guarantees that every slide has a rendered
-    image for visual jury analysis and the UI.
+    image for visual jury analysis and the UI, including styled tables and key text.
     """
     doc = pymupdf.open()
     page = doc.new_page(width=1280, height=720)
@@ -258,25 +271,83 @@ def render_synthetic_slide(
     content_rect = pymupdf.Rect(35, 138, 1245, 675)
     page.draw_rect(content_rect, color=(1, 1, 1), fill=(1, 1, 1))
 
+    # Determine layout bounds based on whether an image is attached
     if image_bytes:
         try:
             page.insert_image(pymupdf.Rect(750, 160, 1220, 650), stream=image_bytes)
-            text_rect = pymupdf.Rect(60, 160, 730, 650)
+            x_left, x_right = 60.0, 730.0
         except Exception:  # noqa: BLE001
-            text_rect = pymupdf.Rect(60, 160, 1220, 650)
+            x_left, x_right = 60.0, 1220.0
     else:
-        text_rect = pymupdf.Rect(60, 160, 1220, 650)
+        x_left, x_right = 60.0, 1220.0
 
-    body_text = raw_text.strip() if raw_text else "No additional text content on this slide."
-    if len(body_text) > 2000:
-        body_text = body_text[:1950] + "..."
-    page.insert_textbox(
-        text_rect,
-        body_text,
-        fontsize=14,
-        color=(0.15, 0.18, 0.22),
-        fontname="helv",
-    )
+    cur_y = 155.0
+
+    # Render Tables if available
+    if tables:
+        for tbl in tables:
+            if not tbl or cur_y >= 640.0:
+                continue
+            num_rows = len(tbl)
+            num_cols = max(len(r) for r in tbl)
+            if num_cols == 0:
+                continue
+
+            col_width = (x_right - x_left) / num_cols
+            max_available = 640.0 - cur_y
+            row_height = min(42.0, max(24.0, (max_available * 0.7 if raw_text.strip() else max_available) / num_rows))
+
+            for r_idx, row in enumerate(tbl):
+                y_top = cur_y + r_idx * row_height
+                y_bot = y_top + row_height
+                if y_bot > 660.0:
+                    break
+
+                is_header = r_idx == 0
+                bg_col = (0.16, 0.22, 0.32) if is_header else ((0.95, 0.96, 0.98) if r_idx % 2 == 1 else (1.0, 1.0, 1.0))
+                txt_col = (1.0, 1.0, 1.0) if is_header else (0.15, 0.18, 0.22)
+                bdr_col = (0.7, 0.75, 0.82) if is_header else (0.85, 0.88, 0.92)
+
+                for c_idx in range(num_cols):
+                    cell_x0 = x_left + c_idx * col_width
+                    cell_x1 = cell_x0 + col_width
+                    page.draw_rect(pymupdf.Rect(cell_x0, y_top, cell_x1, y_bot), color=bdr_col, fill=bg_col, width=1.0)
+
+                    cell_text = row[c_idx] if c_idx < len(row) else ""
+                    if cell_text:
+                        fsize = 10 if num_cols >= 4 else 11
+                        align = pymupdf.TEXT_ALIGN_CENTER if is_header else pymupdf.TEXT_ALIGN_LEFT
+                        page.insert_textbox(
+                            pymupdf.Rect(cell_x0 + 4, y_top + 3, cell_x1 - 4, y_bot - 3),
+                            cell_text,
+                            fontsize=fsize,
+                            color=txt_col,
+                            fontname="helv",
+                            align=align,
+                        )
+
+            cur_y += min(num_rows * row_height, max_available) + 15.0
+
+    # Render Body Text
+    body_text = raw_text.strip()
+    if body_text and cur_y < 650.0:
+        if len(body_text) > 2000:
+            body_text = body_text[:1950] + "..."
+        page.insert_textbox(
+            pymupdf.Rect(x_left, cur_y, x_right, 655.0),
+            body_text,
+            fontsize=13,
+            color=(0.15, 0.18, 0.22),
+            fontname="helv",
+        )
+    elif not body_text and not tables:
+        page.insert_textbox(
+            pymupdf.Rect(x_left, 160.0, x_right, 650.0),
+            "No additional text content on this slide.",
+            fontsize=14,
+            color=(0.15, 0.18, 0.22),
+            fontname="helv",
+        )
 
     # Footer
     page.insert_textbox(
@@ -554,6 +625,17 @@ async def render_submission_slides(conn: asyncpg.Connection, submission_id: UUID
                     ]
                     slide_raw_text = "\n\n".join(t.strip() for t in txt_parts if t.strip())
 
+                    # Extract tables from slide shapes for synthetic fallback canvas
+                    slide_tables: list[list[list[str]]] = []
+                    for shape in slide_obj.shapes:
+                        if getattr(shape, "has_table", False):
+                            try:
+                                tbl = [[cell.text.strip() for cell in row.cells] for row in shape.table.rows]
+                                if tbl and any(any(c for c in r) for r in tbl):
+                                    slide_tables.append(tbl)
+                            except Exception:  # noqa: BLE001, S110
+                                pass
+
                     small_img: bytes | None = None
                     for shape in slide_obj.shapes:
                         if hasattr(shape, "image"):
@@ -568,6 +650,7 @@ async def render_submission_slides(conn: asyncpg.Connection, submission_id: UUID
                         title=slide_title,
                         raw_text=slide_raw_text,
                         image_bytes=small_img,
+                        tables=slide_tables if slide_tables else None,
                     )
                     path = f"{submission_id}/slide-{slide_number}.png"
                     storage.upload(path, png_bytes, {"content-type": "image/png", "upsert": "true"})
