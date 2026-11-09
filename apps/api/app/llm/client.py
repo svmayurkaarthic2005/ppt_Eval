@@ -769,7 +769,7 @@ async def _call_groq(
     )
 
     primary_response_format: dict[str, Any]
-    if has_images:
+    if has_images or GROQ_MODEL.startswith("qwen/"):
         primary_response_format = {"type": "json_object"}
     else:
         primary_response_format = {

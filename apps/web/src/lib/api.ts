@@ -58,8 +58,13 @@ export async function fetchWithRetry(
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(input, init);
-        // Never retry client-side errors or 429 (Too Many Requests) -- fail immediately to respect rate limits
-        if (res.status === 429 || (res.status >= 400 && res.status < 500)) {
+        // Transient burst rate limit (429): wait and retry with backoff
+        if (res.status === 429 && attempt < retries) {
+          await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+          continue;
+        }
+        // Client-side errors (400, 401, 403, 404, etc.) -- fail immediately
+        if (res.status >= 400 && res.status < 500) {
           return res;
         }
         // Only retry cold-start server errors (502, 503, 504)

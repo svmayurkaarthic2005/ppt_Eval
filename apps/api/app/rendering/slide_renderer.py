@@ -327,10 +327,20 @@ async def render_submission_slides(conn: asyncpg.Connection, submission_id: UUID
                 continue
 
             path = f"{submission_id}/slide-{slide_number}.png"
+            if cached_path == path:
+                # Same path: already at destination from a previous run or evaluation
+                rendered_paths[slide_number] = path
+                continue
+
             try:
                 storage.copy(cached_path, path)
                 rendered_paths[slide_number] = path
             except Exception as exc:  # noqa: BLE001
+                exc_str = str(exc).lower()
+                if "409" in exc_str or "duplicate" in exc_str or "already exists" in exc_str:
+                    # Resource already exists at destination; treat as cache hit!
+                    rendered_paths[slide_number] = path
+                    continue
                 logger.warning(
                     "submission %s: could not copy cached render from %s to %s (treating as cache miss): %s",
                     submission_id,
@@ -338,11 +348,54 @@ async def render_submission_slides(conn: asyncpg.Connection, submission_id: UUID
                     path,
                     exc,
                 )
-                # Stale cache pointer: purge from DB and re-render from PDF
+                # Stale cache pointer: purge from DB and re-render
                 await conn.execute("delete from rendered_slide_cache where content_hash = $1", content_hash)
                 cache_misses[slide_number] = content_hash
 
-        # Render any missing or un-cached slides
+        # Zero-RAM optimization: For image-based PPTX decks, extract full-slide picture shapes
+        # directly from python-pptx without invoking the heavy LibreOffice subprocess.
+        if cache_misses:
+            resolved_slides: list[int] = []
+            for slide_number, content_hash in list(cache_misses.items()):
+                if 1 <= slide_number <= len(presentation.slides):
+                    slide_obj = presentation.slides[slide_number - 1]
+                    best_blob: bytes | None = None
+                    best_size = 0
+                    for shape in slide_obj.shapes:
+                        if hasattr(shape, "image"):
+                            try:
+                                blob = shape.image.blob
+                                if len(blob) > best_size:
+                                    best_blob = blob
+                                    best_size = len(blob)
+                            except Exception as exc:  # noqa: BLE001
+                                logger.debug("Failed reading shape image blob: %s", exc)
+                    if best_blob and best_size > 20_000:
+                        path = f"{submission_id}/slide-{slide_number}.png"
+                        try:
+                            storage.upload(path, best_blob, {"content-type": "image/png", "upsert": "true"})
+                            await conn.execute(
+                                """
+                                insert into rendered_slide_cache (content_hash, storage_path)
+                                values ($1, $2)
+                                on conflict (content_hash) do update set storage_path = excluded.storage_path
+                                """,
+                                content_hash,
+                                path,
+                            )
+                            rendered_paths[slide_number] = path
+                            resolved_slides.append(slide_number)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "submission %s: failed direct picture upload for slide %d: %s",
+                                submission_id,
+                                slide_number,
+                                exc,
+                            )
+            for s_num in resolved_slides:
+                cache_misses.pop(s_num, None)
+
+        # Render any remaining un-cached slides via LibreOffice
         if cache_misses:
             try:
                 pdf_bytes = await convert_pptx_to_pdf_bytes(deck_bytes)

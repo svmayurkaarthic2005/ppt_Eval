@@ -68,12 +68,19 @@ function StatCard({
   );
 }
 
-function TableSkeleton() {
+function TableSkeleton({ message = "Loading leaderboard standings (connecting to backend)..." }: { message?: string }) {
   return (
-    <div className="stitch-card overflow-hidden rounded-2xl">
+    <div className="stitch-card overflow-hidden rounded-2xl border border-slate-200/80 p-6">
+      <div className="flex items-center gap-2.5 mb-4 text-xs font-semibold text-slate-500">
+        <svg className="h-4 w-4 animate-spin text-indigo-600 shrink-0" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+        </svg>
+        <span>{message}</span>
+      </div>
       <div className="animate-pulse divide-y divide-slate-100">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-4 px-6 py-4">
+          <div key={i} className="flex items-center gap-4 py-3.5">
             <div className="h-7 w-7 rounded-full bg-slate-200" />
             <div className="h-5 w-44 rounded-lg bg-slate-200" />
             <div className="ml-auto h-5 w-20 rounded-lg bg-slate-200" />
@@ -982,7 +989,7 @@ export default function Home() {
   }
 
   const overallSectionKeys = useMemo(() => sectionKeysOf(overall ?? []), [overall]);
-  const loading = overall === null || groups === null;
+  const loading = view === "overall" ? overall === null : groups === null;
 
   // Identify empty problem statements (ones without submissions in groups)
   const emptyProblemStatements = useMemo(() => {
