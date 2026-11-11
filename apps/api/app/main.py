@@ -7,7 +7,7 @@ import asyncpg
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Windows subprocess support (LibreOffice rendering) needs
@@ -153,7 +153,25 @@ app.include_router(rankings.router)
 app.include_router(problem_statements.router)
 
 
+@app.get("/ping", response_class=PlainTextResponse)
+@app.head("/ping")
+async def ping() -> str:
+    """Ultra-lightweight keep-alive ping for external cron monitors (e.g. cron-job.org).
+    Returns a minimal 2-byte 'ok' with 0 external API calls or database checks,
+    completely preventing cron-job.org 'output too large' (64 KB) failures."""
+    return "ok"
+
+
 @app.get("/health", response_model=HealthStatus)
-async def health(request: Request) -> HealthStatus:
+@app.head("/health")
+async def health(request: Request) -> Response | HealthStatus:
+    if request.method == "HEAD":
+        return Response(status_code=200)
     pool = getattr(request.app.state, "db_pool", None)
     return await get_health(pool=pool)
+
+
+@app.get("/", response_class=PlainTextResponse)
+@app.head("/")
+async def root() -> str:
+    return "HackEval API is online"
