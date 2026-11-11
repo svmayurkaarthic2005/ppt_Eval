@@ -154,24 +154,34 @@ app.include_router(problem_statements.router)
 
 
 @app.get("/ping", response_class=PlainTextResponse)
-@app.head("/ping")
-async def ping() -> str:
+async def ping() -> PlainTextResponse:
     """Ultra-lightweight keep-alive ping for external cron monitors (e.g. cron-job.org).
     Returns a minimal 2-byte 'ok' with 0 external API calls or database checks,
     completely preventing cron-job.org 'output too large' (64 KB) failures."""
-    return "ok"
+    return PlainTextResponse("ok")
+
+
+@app.head("/ping")
+async def ping_head() -> Response:
+    return Response(status_code=200)
 
 
 @app.get("/health", response_model=HealthStatus)
-@app.head("/health")
-async def health(request: Request) -> Response | HealthStatus:
-    if request.method == "HEAD":
-        return Response(status_code=200)
+async def health(request: Request) -> HealthStatus:
     pool = getattr(request.app.state, "db_pool", None)
     return await get_health(pool=pool)
 
 
+@app.head("/health")
+async def health_head() -> Response:
+    return Response(status_code=200)
+
+
 @app.get("/", response_class=PlainTextResponse)
+async def root() -> PlainTextResponse:
+    return PlainTextResponse("HackEval API is online")
+
+
 @app.head("/")
-async def root() -> str:
-    return "HackEval API is online"
+async def root_head() -> Response:
+    return Response(status_code=200)
